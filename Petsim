@@ -1,0 +1,51 @@
+-- PS99 Custom Auto-Farm Framework
+_G.AutoFarmActive = true -- Flip to false to stop the farm loops
+
+-- 1. Grab Game Frameworks
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local Library = require(ReplicatedStorage:WaitForChild("Library"))
+local Network = Library.Network
+
+-- Helper to make firing remotes cleaner
+local function FireRemote(name, ...)
+    Network.Fire(name, ...)
+end
+
+-- 2. Loop 1: Auto-Collect Dropped Loot (Coins & Gems)
+task.spawn(function()
+    while _G.AutoFarmActive do
+        task.wait(0.3) -- Fast collection pace
+        
+        -- The server listens for this event to instantly pull drops to the player
+        FireRemote("Orbs: Collect All")
+    end
+end)
+
+-- 3. Loop 2: Auto-Attack Breakables in the Area
+task.spawn(function()
+    while _G.AutoFarmActive do
+        task.wait(0.1) -- Rapid targeting loop
+        
+        -- Get the active breakables folder from the game world
+        local Breakables = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Breakables")
+        
+        if Breakables then
+            -- Loop through the items currently spawned on the ground
+            for _, item in ipairs(Breakables:GetChildren()) do
+                if _G.AutoFarmActive == false then break end
+                
+                -- Check if the item is a valid breakable object
+                if item:IsA("Model") and item.PrimaryPart then
+                    
+                    -- Syntax signature Pet Sim 99 expects to assign pets to a coin/chest:
+                    -- Arguments consist of a table specifying the targeted Breakable ID
+                    FireRemote("Breakables_PlayerAttack", { [item.Name] = true })
+                    
+                end
+            end
+        end
+    end
+end)
