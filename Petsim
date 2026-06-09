@@ -1,48 +1,53 @@
--- PS99 Custom Auto-Farm Framework
+-- Universal PS99 Auto-Farm Framework (Delta Optimized)
 _G.AutoFarmActive = true -- Flip to false to stop the farm loops
 
--- 1. Grab Game Frameworks
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-local Library = require(ReplicatedStorage:WaitForChild("Library"))
-local Network = Library.Network
-
--- Helper to make firing remotes cleaner
-local function FireRemote(name, ...)
-    Network.Fire(name, ...)
-end
-
--- 2. Loop 1: Auto-Collect Dropped Loot (Coins & Gems)
+-- 1. Loop 1: Auto-Collect Dropped Loot (Coins & Gems)
+-- This physically teleports floating items directly to your character
 task.spawn(function()
     while _G.AutoFarmActive do
-        task.wait(0.3) -- Fast collection pace
+        task.wait(0.3)
         
-        -- The server listens for this event to instantly pull drops to the player
-        FireRemote("Orbs: Collect All")
+        local Things = workspace:FindFirstChild("__THINGS")
+        local Orbs = Things and Things:FindFirstChild("Orbs")
+        
+        if Orbs and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            for _, orb in ipairs(Orbs:GetChildren()) do
+                if _G.AutoFarmActive == false then break end
+                
+                -- Instantly snaps the coin or diamond positions to your character's bag
+                if orb:IsA("BasePart") then
+                    orb.CFrame = hrp.CFrame
+                end
+            end
+        end
     end
 end)
 
--- 3. Loop 2: Auto-Attack Breakables in the Area
+-- 2. Loop 2: Auto-Click / Target Breakables in the Area
+-- This bypasses the network completely by simulating direct clicking
 task.spawn(function()
     while _G.AutoFarmActive do
-        task.wait(0.1) -- Rapid targeting loop
+        task.wait(0.2)
         
-        -- Get the active breakables folder from the game world
-        local Breakables = workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Breakables")
+        local Things = workspace:FindFirstChild("__THINGS")
+        local Breakables = Things and Things:FindFirstChild("Breakables")
         
         if Breakables then
-            -- Loop through the items currently spawned on the ground
             for _, item in ipairs(Breakables:GetChildren()) do
                 if _G.AutoFarmActive == false then break end
                 
-                -- Check if the item is a valid breakable object
+                -- Checks if the breakable model is in the world and clickable
                 if item:IsA("Model") and item.PrimaryPart then
                     
-                    -- Syntax signature Pet Sim 99 expects to assign pets to a coin/chest:
-                    -- Arguments consist of a table specifying the targeted Breakable ID
-                    FireRemote("Breakables_PlayerAttack", { [item.Name] = true })
+                    -- Delta utility function to simulate clicking on the object automatically
+                    local clickDetector = item:FindFirstChildOfClass("ClickDetector")
+                    if clickDetector then
+                        fireclickdetector(clickDetector)
+                    end
                     
                 end
             end
