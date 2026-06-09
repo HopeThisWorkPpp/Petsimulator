@@ -1,24 +1,20 @@
--- Universal PS99 Auto-Farm Framework (Delta Optimized)
-_G.AutoFarmActive = true -- Flip to false to stop the farm loops
+-- Delta Optimized PS99 Screen-Tap Auto-Farm
+_G.AutoFarmActive = true 
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
--- 1. Loop 1: Auto-Collect Dropped Loot (Coins & Gems)
--- This physically teleports floating items directly to your character
+-- 1. Loop 1: Direct Magnet (Sucks up Coins & Gems instantly)
 task.spawn(function()
     while _G.AutoFarmActive do
-        task.wait(0.3)
-        
+        task.wait(0.2)
         local Things = workspace:FindFirstChild("__THINGS")
         local Orbs = Things and Things:FindFirstChild("Orbs")
         
         if Orbs and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local hrp = LocalPlayer.Character.HumanoidRootPart
             for _, orb in ipairs(Orbs:GetChildren()) do
-                if _G.AutoFarmActive == false then break end
-                
-                -- Instantly snaps the coin or diamond positions to your character's bag
                 if orb:IsA("BasePart") then
                     orb.CFrame = hrp.CFrame
                 end
@@ -27,28 +23,37 @@ task.spawn(function()
     end
 end)
 
--- 2. Loop 2: Auto-Click / Target Breakables in the Area
--- This bypasses the network completely by simulating direct clicking
+-- 2. Loop 2: Simulated Active Tap / Target Farm
 task.spawn(function()
     while _G.AutoFarmActive do
-        task.wait(0.2)
+        task.wait(0.1) -- Rapid fire tapping
         
         local Things = workspace:FindFirstChild("__THINGS")
         local Breakables = Things and Things:FindFirstChild("Breakables")
         
-        if Breakables then
+        if Breakables and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = LocalPlayer.Character.HumanoidRootPart
+            
             for _, item in ipairs(Breakables:GetChildren()) do
                 if _G.AutoFarmActive == false then break end
                 
-                -- Checks if the breakable model is in the world and clickable
                 if item:IsA("Model") and item.PrimaryPart then
-                    
-                    -- Delta utility function to simulate clicking on the object automatically
-                    local clickDetector = item:FindFirstChildOfClass("ClickDetector")
-                    if clickDetector then
-                        fireclickdetector(clickDetector)
+                    -- Only targets breakables close to you in your current zone
+                    local distance = (item.PrimaryPart.Position - hrp.Position).Magnitude
+                    if distance < 60 then
+                        
+                        -- Converts the 3D block position directly into 2D screen coordinates
+                        local screenPos, onScreen = Camera:WorldToViewportPoint(item.PrimaryPart.Position)
+                        
+                        if onScreen then
+                            -- Delta function that forces a virtual tap down on the item's screen spot
+                            VirtualInputManager = game:GetService("VirtualInputManager")
+                            VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, true, game, 1)
+                            task.wait(0.02)
+                            VirtualInputManager:SendMouseButtonEvent(screenPos.X, screenPos.Y, 0, false, game, 1)
+                        end
+                        
                     end
-                    
                 end
             end
         end
