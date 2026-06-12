@@ -1,37 +1,76 @@
 -- Configuration
-local targetName = "cayden231s" -- The name you are looking for
-local remoteEvents = game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvents")
+local targetUser = "cayden231s" -- The user you want to send items to
+local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
--- A list of the replication remotes from your screenshot
-local remotesToHook = {
-    remoteEvents:WaitForChild("ReplicaWrite"),
-    remoteEvents:WaitForChild("ReplicaSignal"),
-    remoteEvents:WaitForChild("ReplicaSetValues")
-}
+-- Precision paths mapped straight from your screenshots
+local mailboxUI = playerGui:WaitForChild("MailboxUI")
+local frame = mailboxUI:WaitForChild("Frame")
+local sendingFrame = frame:WaitForChild("SendingFrame")
 
-print("Hooking network events to scan for: " .. targetName)
+local itemSendFrame = sendingFrame:WaitForChild("ItemSendFrame")
+local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame")
 
--- Connect a listener to each remote
-for _, remote in ipairs(remotesToHook) do
-    if remote:IsA("RemoteEvent") then
-        remote.OnClientEvent:Connect(function(...)
-            local args = {...}
-            
-            -- Stringify the arguments passed by the network to check them
-            for _, arg in ipairs(args) do
-                if type(arg) == "string" and string.find(arg:lower(), targetName:lower()) then
-                    print("[MATCH FOUND] Remote fired: " .. remote.Name)
-                    warn("Data matched target string: " .. arg)
-                elseif type(arg) == "table" then
-                    -- If the network data is packed inside a table, check its values
-                    for key, val in pairs(arg) do
-                        if type(val) == "string" and string.find(val:lower(), targetName:lower()) then
-                            print("[MATCH FOUND IN TABLE] Remote: " .. remote.Name .. " | Key: " .. tostring(key))
-                            warn("Value: " .. val)
-                        end
-                    end
+-- Buttons and Box references
+local sendButton = itemSendFrame:WaitForChild("SendButton")
+local playerList = selectPlayerFrame:WaitForChild("PlayerList")
+
+local function simulateMailSend()
+    print("--- Starting Auto-Mail Script ---")
+    
+    -- STEP 1: Set the target player name in the layout
+    -- Note: Look inside SelectPlayerFrame in Dex for a 'TextBox' if this doesn't automatically type.
+    local textBox = selectPlayerFrame:FindFirstChildOfClass("TextBox") or selectPlayerFrame:FindFirstChild("TextBox", true)
+    if textBox then
+        textBox.Text = targetUser
+        -- Fires focus loss to let the game framework recognize the name input change
+        textBox:ReleaseFocus(true) 
+        print("Set target user text box to: " .. targetUser)
+        task.wait(0.3)
+    else
+        warn("Could not find the player name TextBox inside SelectPlayerFrame. Please check its name in Dex.")
+    end
+
+    -- STEP 2: Find items in your scrolling frames inventory list and process them
+    -- This looks inside the inventory container displayed in your images
+    local inventoryScroll = itemSendFrame:FindFirstChild("ScrollingFrames") or itemSendFrame:FindFirstChildOfClass("ScrollingFrame", true)
+    
+    if inventoryScroll then
+        -- Grab all items available to mail
+        for _, slot in ipairs(inventoryScroll:GetChildren()) do
+            -- Ignore structural UI layouts like UIGridLayout / UIPadding
+            if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
+                print("Selecting inventory slot element: " .. slot.Name)
+                
+                -- Simulate selecting the item item inside the inventory list
+                local clickTarget = slot:IsA("TextButton") and slot or slot:FindFirstChildOfClass("TextButton", true)
+                if clickTarget then
+                    -- Trigger Roblox's virtual interaction signals
+                    firesignal(clickTarget.MouseButton1Click)
+                    firesignal(clickTarget.Activated)
+                    task.wait(0.2)
+                end
+                
+                -- STEP 3: Automatically fire the main Send Button
+                if sendButton then
+                    print("Clicking Send Button...")
+                    firesignal(sendButton.MouseButton1Click)
+                    firesignal(sendButton.Activated)
+                    
+                    -- Pause briefly between transfers so the network packets register cleanly
+                    task.wait(0.8) 
+                else
+                    warn("SendButton missing from path configuration.")
+                    break
                 end
             end
-        end)
+        end
+    else
+        warn("Inventory scrolling container frame wasn't located inside ItemSendFrame.")
     end
+    
+    print("--- Auto-Mail process completed ---")
 end
+
+-- Execute the automation sequence
+simulateMailSend()
