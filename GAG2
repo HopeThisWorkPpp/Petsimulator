@@ -1,76 +1,81 @@
--- Configuration
-local targetUser = "cayden231s" -- The user you want to send items to
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Precision paths mapped straight from your screenshots
+-- Configuration
+local targetUser = "cayden231s"
+
+-- Main Paths
 local mailboxUI = playerGui:WaitForChild("MailboxUI")
 local frame = mailboxUI:WaitForChild("Frame")
 local sendingFrame = frame:WaitForChild("SendingFrame")
-
 local itemSendFrame = sendingFrame:WaitForChild("ItemSendFrame")
 local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame")
-
--- Buttons and Box references
-local sendButton = itemSendFrame:WaitForChild("SendButton")
 local playerList = selectPlayerFrame:WaitForChild("PlayerList")
+local sendButton = itemSendFrame:WaitForChild("SendButton")
 
-local function simulateMailSend()
-    print("--- Starting Auto-Mail Script ---")
+-- Helper function to simulate a physical mouse click on an element's center coordinate
+local function physicalClick(guiObject)
+    if not guiObject or not guiObject.AbsolutePosition then return end
     
-    -- STEP 1: Set the target player name in the layout
-    -- Note: Look inside SelectPlayerFrame in Dex for a 'TextBox' if this doesn't automatically type.
-    local textBox = selectPlayerFrame:FindFirstChildOfClass("TextBox") or selectPlayerFrame:FindFirstChild("TextBox", true)
-    if textBox then
-        textBox.Text = targetUser
-        -- Fires focus loss to let the game framework recognize the name input change
-        textBox:ReleaseFocus(true) 
-        print("Set target user text box to: " .. targetUser)
-        task.wait(0.3)
-    else
-        warn("Could not find the player name TextBox inside SelectPlayerFrame. Please check its name in Dex.")
-    end
-
-    -- STEP 2: Find items in your scrolling frames inventory list and process them
-    -- This looks inside the inventory container displayed in your images
-    local inventoryScroll = itemSendFrame:FindFirstChild("ScrollingFrames") or itemSendFrame:FindFirstChildOfClass("ScrollingFrame", true)
+    -- Calculate center coordinates of the UI element
+    local x = guiObject.AbsolutePosition.X + (guiObject.AbsoluteSize.X / 2)
+    local y = guiObject.AbsolutePosition.Y + (guiObject.AbsoluteSize.Y / 2) + 36 -- 36px offset for Roblox topbar
     
-    if inventoryScroll then
-        -- Grab all items available to mail
-        for _, slot in ipairs(inventoryScroll:GetChildren()) do
-            -- Ignore structural UI layouts like UIGridLayout / UIPadding
-            if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
-                print("Selecting inventory slot element: " .. slot.Name)
-                
-                -- Simulate selecting the item item inside the inventory list
-                local clickTarget = slot:IsA("TextButton") and slot or slot:FindFirstChildOfClass("TextButton", true)
-                if clickTarget then
-                    -- Trigger Roblox's virtual interaction signals
-                    firesignal(clickTarget.MouseButton1Click)
-                    firesignal(clickTarget.Activated)
-                    task.wait(0.2)
-                end
-                
-                -- STEP 3: Automatically fire the main Send Button
-                if sendButton then
-                    print("Clicking Send Button...")
-                    firesignal(sendButton.MouseButton1Click)
-                    firesignal(sendButton.Activated)
-                    
-                    -- Pause briefly between transfers so the network packets register cleanly
-                    task.wait(0.8) 
-                else
-                    warn("SendButton missing from path configuration.")
-                    break
-                end
-            end
-        end
-    else
-        warn("Inventory scrolling container frame wasn't located inside ItemSendFrame.")
-    end
-    
-    print("--- Auto-Mail process completed ---")
+    -- Simulate physical mouse down and up
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+    task.wait(0.1)
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+    task.wait(0.2)
 end
 
--- Execute the automation sequence
-simulateMailSend()
+local function runSequence()
+    print("--- Starting Physical Click Sequence ---")
+    
+    -- 1. Look for the player button in the list and click it
+    local playerButton = nil
+    for _, child in ipairs(playerList:GetChildren()) do
+        local textLabel = child:IsA("TextLabel") and child or child:FindFirstChildOfClass("TextLabel", true)
+        if textLabel and string.find(textLabel.Text:lower(), targetUser:lower()) then
+            playerButton = child
+            break
+        end
+    end
+    
+    if playerButton then
+        print("Clicking target player button physically...")
+        physicalClick(playerButton)
+    else
+        warn("Target player not found in the PlayerList. Make sure they show up on screen!")
+        return
+    end
+    
+    -- 2. Find the scrolling box where the inventory slots live
+    local itemContainer = itemSendFrame:FindFirstChild("ScrollingFrames") or itemSendFrame:FindFirstChildOfClass("ScrollingFrame", true)
+    if not itemContainer then
+        warn("Could not find the scrolling frame holding items.")
+        return
+    end
+    
+    -- 3. Loop through and physically click each valid item slot to add it to the mail
+    for _, slot in ipairs(itemContainer:GetChildren()) do
+        if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
+            print("Physically clicking item slot: " .. slot.Name)
+            physicalClick(slot)
+            task.wait(0.2)
+        end
+    end
+    
+    -- 4. Finally, physically click the Send Button
+    if sendButton then
+        print("Physically clicking the Send button...")
+        physicalClick(sendButton)
+    else
+        warn("SendButton path not found.")
+    end
+    
+    print("--- Sequence Complete ---")
+end
+
+-- Make sure you have the mailbox menu completely open on your screen before executing this!
+runSequence()
