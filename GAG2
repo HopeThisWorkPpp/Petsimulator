@@ -1,5 +1,5 @@
 -- Configuration
-local targetName = "Only1sherif" -- The name you are looking for
+local targetName = "cayden231s" -- The name you are looking for
 local remoteEvents = game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvents")
 
 -- A list of the replication remotes from your screenshot
