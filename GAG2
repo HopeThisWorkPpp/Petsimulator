@@ -3,7 +3,7 @@ local targetUser = "cayden231s"
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- UI Element Mapping
+-- Direct Core Layout Paths
 local mailboxUI = playerGui:WaitForChild("MailboxUI")
 local frame = mailboxUI:WaitForChild("Frame")
 local sendingFrame = frame:WaitForChild("SendingFrame")
@@ -12,66 +12,78 @@ local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame")
 local playerList = selectPlayerFrame:WaitForChild("PlayerList")
 local sendButton = itemSendFrame:WaitForChild("SendButton")
 
-local function runSilentMailProcess()
-    print("--- Initiating Silent Mailbox Automation ---")
+local function runTrueBackgroundAutomation()
+    print("--- Initializing Silent Background Mailer ---")
     
-    -- STEP 1: Select Player silently without clicking background elements
-    local targetedPlayerObj = nil
+    -- STEP 1: Targeted Player Selection via Deep-Scan
+    local targetButton = nil
     for _, child in ipairs(playerList:GetChildren()) do
-        local textLabel = child:IsA("TextLabel") and child or child:FindFirstChildOfClass("TextLabel", true)
-        if textLabel and string.find(textLabel.Text:lower(), targetUser:lower()) then
-            targetedPlayerObj = child
-            break
+        if child:IsA("GuiObject") then
+            -- Deep scan every text object inside the player slot asset for the username
+            local elements = child:GetDescendants()
+            for _, el in ipairs(elements) do
+                if el:IsA("TextLabel") and (string.find(el.Text:lower(), targetUser:lower()) or string.find(el.Text:lower(), "rich")) then
+                    targetButton = child
+                    break
+                end
+            end
         end
+        if targetButton then break end
     end
     
-    if targetedPlayerObj then
-        local btn = targetedPlayerObj:IsA("TextButton") and targetedPlayerObj or targetedPlayerObj:FindFirstChildOfClass("TextButton", true)
-        if btn then
-            firesignal(btn.MouseButton1Click)
-            firesignal(btn.Activated)
-            task.wait(0.5) -- Small delay to allow the layout grid to flip smoothly
-        end
-    else
-        warn("Target player variant '" .. targetUser .. "' was not found in the player selection list layout.")
+    if not targetButton then
+        warn("Could not find a valid player card matching: " .. targetUser)
         return
     end
     
-    -- STEP 2: Strict Item Processing Loop
-    local scrollingContainer = itemSendFrame:FindFirstChild("ScrollingFrames")
-    if not scrollingContainer then
-        scrollingContainer = itemSendFrame:FindFirstChildOfClass("ScrollingFrame") or itemSendFrame:FindFirstChild("ScrollingFrame", true)
+    -- Programmatically trigger the player selection frame flip
+    print("Target player slot locked. Firing selection frame...")
+    local playerToggle = targetButton:IsA("TextButton") and targetButton or targetButton:FindFirstChildOfClass("TextButton", true)
+    if playerToggle then
+        firesignal(playerToggle.MouseButton1Click)
+        firesignal(playerToggle.Activated)
+        task.wait(0.6) -- Wait for the UI layout view to flip over smoothly
     end
     
-    if not scrollingContainer then
-        warn("Could not isolate the main scrolling content container.")
+    -- STEP 2: Strict Inventory Grid Scanning
+    local scrollBox = itemSendFrame:FindFirstChild("ScrollingFrames") or itemSendFrame:FindFirstChildOfClass("ScrollingFrame", true) or itemSendFrame:FindFirstChild("ScrollingFrame", true)
+    
+    if not scrollBox then
+        warn("Inventory item box container could not be found.")
         return
     end
     
-    -- Gather only valid grid cells (ignoring layout instances and structural frames)
-    for _, slot in ipairs(scrollingContainer:GetChildren()) do
-        if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
+    print("Scanning item grid cells silently...")
+    -- Loop through the absolute items container list
+    for _, cell in ipairs(scrollBox:GetChildren()) do
+        -- Strictly process grid objects, ignoring structural layouts and padding rules
+        if cell:IsA("GuiObject") and cell.Name ~= "UIGridLayout" and cell.Name ~= "UIPadding" and cell.Name ~= "Frame" then
             
-            -- Specifically pinpoint only the selection button inside the cell template
-            local clickTarget = slot:IsA("TextButton") and slot or slot:FindFirstChildOfClass("TextButton", true) or slot:FindFirstChildOfClass("ImageButton", true)
+            -- Isolate the direct selection button template inside the inventory square cell
+            local cellTrigger = cell:IsA("TextButton") and cell or cell:FindFirstChildOfClass("TextButton", true) or cell:FindFirstChildOfClass("ImageButton", true)
             
-            if clickTarget then
-                print("Processing item asset slot safely: " .. slot.Name)
-                firesignal(clickTarget.MouseButton1Click)
-                firesignal(clickTarget.Activated)
-                task.wait(0.2) -- Micro-delay to avoid network throttling
+            if cellTrigger then
+                print("Moving item slot to staging area: " .. cell.Name)
+                firesignal(cellTrigger.MouseButton1Click)
+                firesignal(cellTrigger.Activated)
+                task.wait(0.2) -- Micro-delay to let the frame staging register
                 
-                -- Fire the green Send confirmation
+                -- STEP 3: Silent Confirmation Action Firing
                 if sendButton then
                     firesignal(sendButton.MouseButton1Click)
                     firesignal(sendButton.Activated)
-                    task.wait(0.8) -- Give the engine time to register the buffer handshake cleanly
+                    
+                    -- Safe cooldown period for the server network handler to process and clear the slot
+                    task.wait(1.0)
+                else
+                    warn("Send confirmation button reference was broken during iteration.")
+                    break
                 end
             end
         end
     end
     
-    print("--- Silent Mailbox Automation Sequence Finalized ---")
+    print("--- Background Automation Task Finished ---")
 end
 
-runSilentMailProcess()
+runTrueBackgroundAutomation()
