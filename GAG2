@@ -1,0 +1,37 @@
+-- Configuration
+local targetName = "Only1sherif" -- The name you are looking for
+local remoteEvents = game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvents")
+
+-- A list of the replication remotes from your screenshot
+local remotesToHook = {
+    remoteEvents:WaitForChild("ReplicaWrite"),
+    remoteEvents:WaitForChild("ReplicaSignal"),
+    remoteEvents:WaitForChild("ReplicaSetValues")
+}
+
+print("Hooking network events to scan for: " .. targetName)
+
+-- Connect a listener to each remote
+for _, remote in ipairs(remotesToHook) do
+    if remote:IsA("RemoteEvent") then
+        remote.OnClientEvent:Connect(function(...)
+            local args = {...}
+            
+            -- Stringify the arguments passed by the network to check them
+            for _, arg in ipairs(args) do
+                if type(arg) == "string" and string.find(arg:lower(), targetName:lower()) then
+                    print("[MATCH FOUND] Remote fired: " .. remote.Name)
+                    warn("Data matched target string: " .. arg)
+                elseif type(arg) == "table" then
+                    -- If the network data is packed inside a table, check its values
+                    for key, val in pairs(arg) do
+                        if type(val) == "string" and string.find(val:lower(), targetName:lower()) then
+                            print("[MATCH FOUND IN TABLE] Remote: " .. remote.Name .. " | Key: " .. tostring(key))
+                            warn("Value: " .. val)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end
