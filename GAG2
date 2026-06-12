@@ -1,95 +1,67 @@
 -- Configuration
-local targetUser = "cayden231s" -- The user you want to send items to
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-
--- Direct Layout Paths
 local mailboxUI = playerGui:WaitForChild("MailboxUI")
-local frame = mailboxUI:WaitForChild("Frame")
-local sendingFrame = frame:WaitForChild("SendingFrame")
 
-local itemSendFrame = sendingFrame:WaitForChild("ItemSendFrame")
-local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame")
-local sendButton = itemSendFrame:WaitForChild("SendButton")
-local playerList = selectPlayerFrame:WaitForChild("PlayerList")
-
-local function autoMailAll()
-    print("--- Starting Mailbox Automation ---")
+local function bruteForceMailItems()
+    print("--- Starting Direct Screen-Level Scan ---")
     
-    -- STEP 1: Select the player (Only if the selection menu is visible)
-    if selectPlayerFrame.Visible or playerList:FindFirstChildOfClass("GuiObject") then
-        print("Looking for player: " .. targetUser)
-        local targetPlayerButton = nil
-        
-        for _, child in ipairs(playerList:GetChildren()) do
-            -- Look inside the template buttons for the @username text label
-            local labels = child:GetDescendants()
-            for _, label in ipairs(labels) do
-                if label:IsA("TextLabel") and string.find(label.Text:lower(), targetUser:lower()) then
-                    targetPlayerButton = child
-                    break
-                end
-            end
-            if targetPlayerButton then break end
+    -- 1. Locate the Send Button dynamically by searching for the visual Green text button
+    local sendButton = nil
+    for _, obj in ipairs(mailboxUI:GetDescendants()) do
+        if obj:IsA("TextButton") and (obj.Name == "SendButton" or obj.Text == "Send") then
+            sendButton = obj
+            break
         end
-        
-        if targetPlayerButton then
-            print("Found player slot! Clicking to switch to Inventory view...")
-            local clickTarget = targetPlayerButton:IsA("TextButton") and targetPlayerButton or targetPlayerButton:FindFirstChildOfClass("TextButton", true)
-            if clickTarget then
+    end
+    
+    if not sendButton then
+        warn("CRITICAL: Could not visually locate the green 'Send' button on your screen layouts.")
+        return
+    end
+    print("Successfully targeted Send Button: " .. sendButton:GetFullName())
+
+    -- 2. Scan for actual clickable item slots inside the grid layout frames
+    local itemsSent = 0
+    
+    for _, item in ipairs(mailboxUI:GetDescendants()) do
+        -- Item templates are usually ImageButtons or Frames containing a text count/image
+        -- We want to ignore structural UI utilities, backgrounds, main buttons, and titles
+        if item:IsA("GuiObject") 
+           and item.Name ~= "UIGridLayout" 
+           and item.Name ~= "UIPadding"
+           and item.Name ~= "Frame"
+           and item.Name ~= "ItemSendFrame"
+           and item.Name ~= "SendingFrame"
+           and not item.Name:find("Button") 
+           and not item.Name:find("Text") then
+            
+            -- Confirm this item slot actually has a clickable element inside it
+            local clickTarget = item:IsA("TextButton") or item:IsA("ImageButton") 
+                and item or item:FindFirstChildOfClass("TextButton", true) or item:FindFirstChildOfClass("ImageButton", true)
+                
+            if clickTarget and clickTarget:IsDescendantOf(mailboxUI) then
+                itemsSent = itemsSent + 1
+                print(string.format("Slot #%d Found -> Simulating Item Click on: %s", itemsSent, item.Name))
+                
+                -- Force Roblox to register virtual pointer execution on the slot item
                 firesignal(clickTarget.MouseButton1Click)
                 firesignal(clickTarget.Activated)
-                task.wait(1.0) -- Wait for the UI to flip to the item view
-            end
-        else
-            warn("Could not find '" .. targetUser .. "' in your player selection list.")
-            return
-        end
-    end
-
-    -- STEP 2: Process the inventory items
-    local scrollingContainer = itemSendFrame:FindFirstChild("ScrollingFrames")
-    if not scrollingContainer then
-        scrollingContainer = itemSendFrame:FindFirstChildOfClass("ScrollingFrame") or itemSendFrame:FindFirstChild("ScrollingFrame", true)
-    end
-    
-    if scrollingContainer then
-        print("Inventory window detected. Scanning items...")
-        
-        -- Loop through the item templates
-        for _, slot in ipairs(scrollingContainer:GetChildren()) do
-            -- Only click valid item containers, ignore padding/grid layouts
-            if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
-                print("Mailing item slot: " .. slot.Name)
+                task.wait(0.4) -- Small delay to allow selection animation to frame up
                 
-                -- Click the item grid icon to select it
-                local itemClick = slot:IsA("TextButton") and slot or slot:FindFirstChildOfClass("TextButton", true)
-                if itemClick then
-                    firesignal(itemClick.MouseButton1Click)
-                    firesignal(itemClick.Activated)
-                    task.wait(0.3)
-                end
+                -- Fire the green Send button directly
+                print("Firing network send request...")
+                firesignal(sendButton.MouseButton1Click)
+                firesignal(sendButton.Activated)
                 
-                -- Click the green Send button
-                if sendButton then
-                    print("Clicking Send...")
-                    firesignal(sendButton.MouseButton1Click)
-                    firesignal(sendButton.Activated)
-                    
-                    -- Wait for the packet to register and the item grid to clear/update
-                    task.wait(1.2) 
-                else
-                    warn("Send button path is missing.")
-                    break
-                end
+                -- Give the game framework 1.5 seconds to register the transaction and refresh the grid slots
+                task.wait(1.5) 
             end
         end
-    else
-        warn("Inventory container could not be found. Make sure the inventory grid is on screen.")
     end
     
-    print("--- Mailbox Automation Complete ---")
+    print("--- Process Finished. Total target slots processed: " .. tostring(itemsSent) .. " ---")
 end
 
--- Run the automation sequence
-autoMailAll()
+-- Run the direct visual sweep script
+bruteForceMailItems()
