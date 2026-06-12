@@ -1,81 +1,95 @@
-local VirtualInputManager = game:GetService("VirtualInputManager")
+-- Configuration
+local targetUser = "cayden231s" -- The user you want to send items to
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Configuration
-local targetUser = "cayden231s"
-
--- Main Paths
+-- Direct Layout Paths
 local mailboxUI = playerGui:WaitForChild("MailboxUI")
 local frame = mailboxUI:WaitForChild("Frame")
 local sendingFrame = frame:WaitForChild("SendingFrame")
+
 local itemSendFrame = sendingFrame:WaitForChild("ItemSendFrame")
 local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame")
-local playerList = selectPlayerFrame:WaitForChild("PlayerList")
 local sendButton = itemSendFrame:WaitForChild("SendButton")
+local playerList = selectPlayerFrame:WaitForChild("PlayerList")
 
--- Helper function to simulate a physical mouse click on an element's center coordinate
-local function physicalClick(guiObject)
-    if not guiObject or not guiObject.AbsolutePosition then return end
+local function autoMailAll()
+    print("--- Starting Mailbox Automation ---")
     
-    -- Calculate center coordinates of the UI element
-    local x = guiObject.AbsolutePosition.X + (guiObject.AbsoluteSize.X / 2)
-    local y = guiObject.AbsolutePosition.Y + (guiObject.AbsoluteSize.Y / 2) + 36 -- 36px offset for Roblox topbar
-    
-    -- Simulate physical mouse down and up
-    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-    task.wait(0.1)
-    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-    task.wait(0.2)
-end
-
-local function runSequence()
-    print("--- Starting Physical Click Sequence ---")
-    
-    -- 1. Look for the player button in the list and click it
-    local playerButton = nil
-    for _, child in ipairs(playerList:GetChildren()) do
-        local textLabel = child:IsA("TextLabel") and child or child:FindFirstChildOfClass("TextLabel", true)
-        if textLabel and string.find(textLabel.Text:lower(), targetUser:lower()) then
-            playerButton = child
-            break
+    -- STEP 1: Select the player (Only if the selection menu is visible)
+    if selectPlayerFrame.Visible or playerList:FindFirstChildOfClass("GuiObject") then
+        print("Looking for player: " .. targetUser)
+        local targetPlayerButton = nil
+        
+        for _, child in ipairs(playerList:GetChildren()) do
+            -- Look inside the template buttons for the @username text label
+            local labels = child:GetDescendants()
+            for _, label in ipairs(labels) do
+                if label:IsA("TextLabel") and string.find(label.Text:lower(), targetUser:lower()) then
+                    targetPlayerButton = child
+                    break
+                end
+            end
+            if targetPlayerButton then break end
+        end
+        
+        if targetPlayerButton then
+            print("Found player slot! Clicking to switch to Inventory view...")
+            local clickTarget = targetPlayerButton:IsA("TextButton") and targetPlayerButton or targetPlayerButton:FindFirstChildOfClass("TextButton", true)
+            if clickTarget then
+                firesignal(clickTarget.MouseButton1Click)
+                firesignal(clickTarget.Activated)
+                task.wait(1.0) -- Wait for the UI to flip to the item view
+            end
+        else
+            warn("Could not find '" .. targetUser .. "' in your player selection list.")
+            return
         end
     end
-    
-    if playerButton then
-        print("Clicking target player button physically...")
-        physicalClick(playerButton)
-    else
-        warn("Target player not found in the PlayerList. Make sure they show up on screen!")
-        return
+
+    -- STEP 2: Process the inventory items
+    local scrollingContainer = itemSendFrame:FindFirstChild("ScrollingFrames")
+    if not scrollingContainer then
+        scrollingContainer = itemSendFrame:FindFirstChildOfClass("ScrollingFrame") or itemSendFrame:FindFirstChild("ScrollingFrame", true)
     end
     
-    -- 2. Find the scrolling box where the inventory slots live
-    local itemContainer = itemSendFrame:FindFirstChild("ScrollingFrames") or itemSendFrame:FindFirstChildOfClass("ScrollingFrame", true)
-    if not itemContainer then
-        warn("Could not find the scrolling frame holding items.")
-        return
-    end
-    
-    -- 3. Loop through and physically click each valid item slot to add it to the mail
-    for _, slot in ipairs(itemContainer:GetChildren()) do
-        if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
-            print("Physically clicking item slot: " .. slot.Name)
-            physicalClick(slot)
-            task.wait(0.2)
+    if scrollingContainer then
+        print("Inventory window detected. Scanning items...")
+        
+        -- Loop through the item templates
+        for _, slot in ipairs(scrollingContainer:GetChildren()) do
+            -- Only click valid item containers, ignore padding/grid layouts
+            if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
+                print("Mailing item slot: " .. slot.Name)
+                
+                -- Click the item grid icon to select it
+                local itemClick = slot:IsA("TextButton") and slot or slot:FindFirstChildOfClass("TextButton", true)
+                if itemClick then
+                    firesignal(itemClick.MouseButton1Click)
+                    firesignal(itemClick.Activated)
+                    task.wait(0.3)
+                end
+                
+                -- Click the green Send button
+                if sendButton then
+                    print("Clicking Send...")
+                    firesignal(sendButton.MouseButton1Click)
+                    firesignal(sendButton.Activated)
+                    
+                    -- Wait for the packet to register and the item grid to clear/update
+                    task.wait(1.2) 
+                else
+                    warn("Send button path is missing.")
+                    break
+                end
+            end
         end
-    end
-    
-    -- 4. Finally, physically click the Send Button
-    if sendButton then
-        print("Physically clicking the Send button...")
-        physicalClick(sendButton)
     else
-        warn("SendButton path not found.")
+        warn("Inventory container could not be found. Make sure the inventory grid is on screen.")
     end
     
-    print("--- Sequence Complete ---")
+    print("--- Mailbox Automation Complete ---")
 end
 
--- Make sure you have the mailbox menu completely open on your screen before executing this!
-runSequence()
+-- Run the automation sequence
+autoMailAll()
