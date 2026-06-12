@@ -1,67 +1,77 @@
 -- Configuration
+local targetUser = "cayden231s"
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
-local mailboxUI = playerGui:WaitForChild("MailboxUI")
 
-local function bruteForceMailItems()
-    print("--- Starting Direct Screen-Level Scan ---")
+-- UI Element Mapping
+local mailboxUI = playerGui:WaitForChild("MailboxUI")
+local frame = mailboxUI:WaitForChild("Frame")
+local sendingFrame = frame:WaitForChild("SendingFrame")
+local itemSendFrame = sendingFrame:WaitForChild("ItemSendFrame")
+local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame")
+local playerList = selectPlayerFrame:WaitForChild("PlayerList")
+local sendButton = itemSendFrame:WaitForChild("SendButton")
+
+local function runSilentMailProcess()
+    print("--- Initiating Silent Mailbox Automation ---")
     
-    -- 1. Locate the Send Button dynamically by searching for the visual Green text button
-    local sendButton = nil
-    for _, obj in ipairs(mailboxUI:GetDescendants()) do
-        if obj:IsA("TextButton") and (obj.Name == "SendButton" or obj.Text == "Send") then
-            sendButton = obj
+    -- STEP 1: Select Player silently without clicking background elements
+    local targetedPlayerObj = nil
+    for _, child in ipairs(playerList:GetChildren()) do
+        local textLabel = child:IsA("TextLabel") and child or child:FindFirstChildOfClass("TextLabel", true)
+        if textLabel and string.find(textLabel.Text:lower(), targetUser:lower()) then
+            targetedPlayerObj = child
             break
         end
     end
     
-    if not sendButton then
-        warn("CRITICAL: Could not visually locate the green 'Send' button on your screen layouts.")
+    if targetedPlayerObj then
+        local btn = targetedPlayerObj:IsA("TextButton") and targetedPlayerObj or targetedPlayerObj:FindFirstChildOfClass("TextButton", true)
+        if btn then
+            firesignal(btn.MouseButton1Click)
+            firesignal(btn.Activated)
+            task.wait(0.5) -- Small delay to allow the layout grid to flip smoothly
+        end
+    else
+        warn("Target player variant '" .. targetUser .. "' was not found in the player selection list layout.")
         return
     end
-    print("Successfully targeted Send Button: " .. sendButton:GetFullName())
-
-    -- 2. Scan for actual clickable item slots inside the grid layout frames
-    local itemsSent = 0
     
-    for _, item in ipairs(mailboxUI:GetDescendants()) do
-        -- Item templates are usually ImageButtons or Frames containing a text count/image
-        -- We want to ignore structural UI utilities, backgrounds, main buttons, and titles
-        if item:IsA("GuiObject") 
-           and item.Name ~= "UIGridLayout" 
-           and item.Name ~= "UIPadding"
-           and item.Name ~= "Frame"
-           and item.Name ~= "ItemSendFrame"
-           and item.Name ~= "SendingFrame"
-           and not item.Name:find("Button") 
-           and not item.Name:find("Text") then
+    -- STEP 2: Strict Item Processing Loop
+    local scrollingContainer = itemSendFrame:FindFirstChild("ScrollingFrames")
+    if not scrollingContainer then
+        scrollingContainer = itemSendFrame:FindFirstChildOfClass("ScrollingFrame") or itemSendFrame:FindFirstChild("ScrollingFrame", true)
+    end
+    
+    if not scrollingContainer then
+        warn("Could not isolate the main scrolling content container.")
+        return
+    end
+    
+    -- Gather only valid grid cells (ignoring layout instances and structural frames)
+    for _, slot in ipairs(scrollingContainer:GetChildren()) do
+        if slot:IsA("GuiObject") and slot.Name ~= "UIGridLayout" and slot.Name ~= "UIPadding" then
             
-            -- Confirm this item slot actually has a clickable element inside it
-            local clickTarget = item:IsA("TextButton") or item:IsA("ImageButton") 
-                and item or item:FindFirstChildOfClass("TextButton", true) or item:FindFirstChildOfClass("ImageButton", true)
-                
-            if clickTarget and clickTarget:IsDescendantOf(mailboxUI) then
-                itemsSent = itemsSent + 1
-                print(string.format("Slot #%d Found -> Simulating Item Click on: %s", itemsSent, item.Name))
-                
-                -- Force Roblox to register virtual pointer execution on the slot item
+            -- Specifically pinpoint only the selection button inside the cell template
+            local clickTarget = slot:IsA("TextButton") and slot or slot:FindFirstChildOfClass("TextButton", true) or slot:FindFirstChildOfClass("ImageButton", true)
+            
+            if clickTarget then
+                print("Processing item asset slot safely: " .. slot.Name)
                 firesignal(clickTarget.MouseButton1Click)
                 firesignal(clickTarget.Activated)
-                task.wait(0.4) -- Small delay to allow selection animation to frame up
+                task.wait(0.2) -- Micro-delay to avoid network throttling
                 
-                -- Fire the green Send button directly
-                print("Firing network send request...")
-                firesignal(sendButton.MouseButton1Click)
-                firesignal(sendButton.Activated)
-                
-                -- Give the game framework 1.5 seconds to register the transaction and refresh the grid slots
-                task.wait(1.5) 
+                -- Fire the green Send confirmation
+                if sendButton then
+                    firesignal(sendButton.MouseButton1Click)
+                    firesignal(sendButton.Activated)
+                    task.wait(0.8) -- Give the engine time to register the buffer handshake cleanly
+                end
             end
         end
     end
     
-    print("--- Process Finished. Total target slots processed: " .. tostring(itemsSent) .. " ---")
+    print("--- Silent Mailbox Automation Sequence Finalized ---")
 end
 
--- Run the direct visual sweep script
-bruteForceMailItems()
+runSilentMailProcess()
