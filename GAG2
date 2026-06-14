@@ -480,9 +480,10 @@ task.spawn(function()
 end)
 
 -- CONCURRENT LOADER: Runs your Luarmor script inside its own thread
+-- CONCURRENT LOADER: Runs your GitHub script inside its own thread
 task.spawn(function()
     local ok, err = pcall(function()
-        loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/795c7accd08487171484e54a92e75c77.lua"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/xQuartyx/QuartyzScript/main/Loader.lua"))()
     end)
     if not ok then
         warn("External script failed to run: " .. tostring(err))
