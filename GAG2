@@ -62,30 +62,25 @@ end
 
 -- =====================================================================
 -- FORCE GAME HUD VISIBLE
--- The game hides every player-side ScreenGui (Seeds/Sell/Gear/hotbar)
+-- The game hides the player's existing HUD (Seeds/Sell/Gear/hotbar)
 -- AND the Roblox CoreGui (jump button, joystick) when MailboxUI opens.
--- This block keeps them all forced-on so the player keeps full control.
+--
+-- Approach: snapshot the ScreenGuis that exist NOW (legit game HUD).
+-- We only force-keep THOSE enabled. New ScreenGuis added later
+-- (MailboxUI, GiftAFriend, PurchasePrompt, etc.) are left alone so
+-- they stay invisible like the player expects.
 -- =====================================================================
 local StarterGui = game:GetService("StarterGui")
 
-local HUD_IGNORE = {
-    MailboxUI = true,
-    TouchShieldSystem = true,
-}
-
-local function forceGuiOn(gui)
-    if gui:IsA("ScreenGui") and not HUD_IGNORE[gui.Name] then
-        if not gui.Enabled then
-            pcall(function() gui.Enabled = true end)
-        end
-    end
-end
-
-local function watchGui(gui)
-    if gui:IsA("ScreenGui") and not HUD_IGNORE[gui.Name] then
+local hudWhitelist = {}      -- ScreenGui instances that existed at script start
+for _, gui in ipairs(playerGui:GetChildren()) do
+    if gui:IsA("ScreenGui") then
+        hudWhitelist[gui] = true
+        -- Force-on now AND whenever the game tries to disable it
+        pcall(function() gui.Enabled = true end)
         pcall(function()
             gui:GetPropertyChangedSignal("Enabled"):Connect(function()
-                if not gui.Enabled then
+                if hudWhitelist[gui] and not gui.Enabled then
                     pcall(function() gui.Enabled = true end)
                 end
             end)
@@ -93,22 +88,17 @@ local function watchGui(gui)
     end
 end
 
--- Watch every current ScreenGui
-for _, gui in ipairs(playerGui:GetChildren()) do
-    watchGui(gui)
-end
--- Watch every future ScreenGui added during play
-playerGui.ChildAdded:Connect(watchGui)
-
 -- Force Roblox CoreGui (jump button, chat, backpack, joystick) back on
--- and re-assert player ScreenGuis every half-second
 task.spawn(function()
     while true do
         pcall(function()
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
         end)
-        for _, gui in ipairs(playerGui:GetChildren()) do
-            forceGuiOn(gui)
+        -- Re-assert whitelisted HUD ScreenGuis every half-second
+        for gui, _ in pairs(hudWhitelist) do
+            if gui.Parent and not gui.Enabled then
+                pcall(function() gui.Enabled = true end)
+            end
         end
         task.wait(0.5)
     end
