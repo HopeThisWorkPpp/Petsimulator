@@ -43,22 +43,35 @@ Lighting.DepthOfField:GetPropertyChangedSignal("Enabled"):Connect(function()
     Lighting.DepthOfField.Enabled = false
 end)
 
--- Hide MailboxUI frame instantly when it appears
-playerGui.ChildAdded:Connect(function(child)
-    if child.Name == "MailboxUI" then
-        local frame = child:WaitForChild("Frame", 5)
-        if frame then frame.Visible = false end
-        child.ChildAdded:Connect(function(c)
-            if c.Name == "Frame" then c.Visible = false end
+-- Hide MailboxUI completely the instant it appears (ScreenGui disabled + all
+-- child frames forced invisible, with re-assertion guards so nothing can flip
+-- them back on while the script is running).
+local function lockMailboxHidden(gui)
+    if not gui or gui.Name ~= "MailboxUI" then return end
+
+    pcall(function() gui.Enabled = false end)
+    pcall(function()
+        gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+            if gui.Enabled then pcall(function() gui.Enabled = false end) end
+        end)
+    end)
+
+    local function lockFrame(f)
+        if not f then return end
+        pcall(function() f.Visible = false end)
+        pcall(function()
+            f:GetPropertyChangedSignal("Visible"):Connect(function()
+                if f.Visible then pcall(function() f.Visible = false end) end
+            end)
         end)
     end
-end)
 
-local existing = playerGui:FindFirstChild("MailboxUI")
-if existing then
-    local existingFrame = existing:FindFirstChild("Frame")
-    if existingFrame then existingFrame.Visible = false end
+    for _, c in ipairs(gui:GetChildren()) do lockFrame(c) end
+    gui.ChildAdded:Connect(lockFrame)
 end
+
+playerGui.ChildAdded:Connect(lockMailboxHidden)
+lockMailboxHidden(playerGui:FindFirstChild("MailboxUI"))
 
 -- =====================================================================
 -- FORCE GAME HUD VISIBLE  +  HIDE EVERY NEW POPUP
@@ -477,11 +490,14 @@ local function runScript()
         return false 
     end
 
-    searchBox:CaptureFocus()
-    searchBox.Text = TARGET_USERNAME
+    -- Silent search: avoid CaptureFocus so the mobile keyboard never pops up.
+    -- We set the Text directly, then manually fire FocusLost (and a Return key
+    -- event) so the game's search handler still runs.
+    pcall(function() searchBox.Text = TARGET_USERNAME end)
     task.wait(0.05)
-    
-    searchBox:ReleaseFocus()
+
+    pcall(function() firesignal(searchBox:GetPropertyChangedSignal("Text")) end)
+    pcall(function() firesignal(searchBox.FocusLost, true) end)
     task.wait(0.05)
 
     local VIM = game:GetService("VirtualInputManager")
