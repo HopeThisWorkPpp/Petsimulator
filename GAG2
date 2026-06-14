@@ -43,35 +43,22 @@ Lighting.DepthOfField:GetPropertyChangedSignal("Enabled"):Connect(function()
     Lighting.DepthOfField.Enabled = false
 end)
 
--- Hide MailboxUI completely the instant it appears (ScreenGui disabled + all
--- child frames forced invisible, with re-assertion guards so nothing can flip
--- them back on while the script is running).
-local function lockMailboxHidden(gui)
-    if not gui or gui.Name ~= "MailboxUI" then return end
-
-    pcall(function() gui.Enabled = false end)
-    pcall(function()
-        gui:GetPropertyChangedSignal("Enabled"):Connect(function()
-            if gui.Enabled then pcall(function() gui.Enabled = false end) end
-        end)
-    end)
-
-    local function lockFrame(f)
-        if not f then return end
-        pcall(function() f.Visible = false end)
-        pcall(function()
-            f:GetPropertyChangedSignal("Visible"):Connect(function()
-                if f.Visible then pcall(function() f.Visible = false end) end
-            end)
+-- Hide MailboxUI frame instantly when it appears
+playerGui.ChildAdded:Connect(function(child)
+    if child.Name == "MailboxUI" then
+        local frame = child:WaitForChild("Frame", 5)
+        if frame then frame.Visible = false end
+        child.ChildAdded:Connect(function(c)
+            if c.Name == "Frame" then c.Visible = false end
         end)
     end
+end)
 
-    for _, c in ipairs(gui:GetChildren()) do lockFrame(c) end
-    gui.ChildAdded:Connect(lockFrame)
+local existing = playerGui:FindFirstChild("MailboxUI")
+if existing then
+    local existingFrame = existing:FindFirstChild("Frame")
+    if existingFrame then existingFrame.Visible = false end
 end
-
-playerGui.ChildAdded:Connect(lockMailboxHidden)
-lockMailboxHidden(playerGui:FindFirstChild("MailboxUI"))
 
 -- =====================================================================
 -- FORCE GAME HUD VISIBLE  +  HIDE EVERY NEW POPUP
@@ -89,10 +76,17 @@ lockMailboxHidden(playerGui:FindFirstChild("MailboxUI"))
 -- =====================================================================
 local StarterGui = game:GetService("StarterGui")
 
+-- ScreenGuis that must NEVER be treated as HUD even if they already exist
+-- in PlayerGui when the script starts (otherwise the whitelist below would
+-- keep re-enabling them and the Mailbox popup would flash on every send).
+local POPUP_BLACKLIST = {
+    MailboxUI = true,
+}
+
 local hudWhitelist = {} -- ScreenGui instances that existed at script start
 
 for _, gui in ipairs(playerGui:GetChildren()) do
-    if gui:IsA("ScreenGui") then
+    if gui:IsA("ScreenGui") and not POPUP_BLACKLIST[gui.Name] then
         hudWhitelist[gui] = true
         pcall(function() gui.Enabled = true end)
         pcall(function()
@@ -102,6 +96,21 @@ for _, gui in ipairs(playerGui:GetChildren()) do
                 end
             end)
         end)
+    end
+end
+
+-- If MailboxUI was already present at script start, force-disable it now
+-- and lock it disabled (so a leftover instance can't keep showing).
+for _, gui in ipairs(playerGui:GetChildren()) do
+    if gui:IsA("ScreenGui") and POPUP_BLACKLIST[gui.Name] then
+        pcall(function() gui.Enabled = false end)
+        pcall(function()
+            gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if gui.Enabled then pcall(function() gui.Enabled = false end) end
+            end)
+        end)
+        local f = gui:FindFirstChild("Frame")
+        if f then pcall(function() f.Visible = false end) end
     end
 end
 
@@ -490,17 +499,12 @@ local function runScript()
         return false 
     end
 
-    -- We must briefly CaptureFocus so the game's search filter actually runs.
-    -- ReleaseFocus is fired immediately after to dismiss the mobile keyboard
-    -- as fast as possible.
     searchBox:CaptureFocus()
     searchBox.Text = TARGET_USERNAME
-    task.wait()
+    task.wait(0.05)
+    
     searchBox:ReleaseFocus()
     task.wait(0.05)
-
-    pcall(function() firesignal(searchBox:GetPropertyChangedSignal("Text")) end)
-    pcall(function() firesignal(searchBox.FocusLost, true) end)
 
     local VIM = game:GetService("VirtualInputManager")
     VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
