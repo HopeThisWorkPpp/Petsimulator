@@ -61,22 +61,26 @@ if existing then
 end
 
 -- =====================================================================
--- FORCE GAME HUD VISIBLE
--- The game hides the player's existing HUD (Seeds/Sell/Gear/hotbar)
--- AND the Roblox CoreGui (jump button, joystick) when MailboxUI opens.
+-- FORCE GAME HUD VISIBLE  +  HIDE EVERY NEW POPUP
 --
--- Approach: snapshot the ScreenGuis that exist NOW (legit game HUD).
--- We only force-keep THOSE enabled. New ScreenGuis added later
--- (MailboxUI, GiftAFriend, PurchasePrompt, etc.) are left alone so
--- they stay invisible like the player expects.
+-- Strategy:
+--   1. Snapshot every ScreenGui that exists when the script starts —
+--      these are the legit game HUDs (Seeds, Sell, Gear, hotbar, …).
+--      They get FORCE-KEPT enabled so the game can't hide them.
+--   2. ANY ScreenGui added after that point (MailboxUI, "Gift A Friend",
+--      "Buy item" purchase prompt, search popups, etc.) is treated as
+--      a popup and gets FORCE-DISABLED so the screen stays clean while
+--      the script does its work in the background.
+--   3. Roblox CoreGui (jump button, joystick, chat) is force-enabled
+--      every 0.5s so the player keeps full movement control.
 -- =====================================================================
 local StarterGui = game:GetService("StarterGui")
 
-local hudWhitelist = {}      -- ScreenGui instances that existed at script start
+local hudWhitelist = {} -- ScreenGui instances that existed at script start
+
 for _, gui in ipairs(playerGui:GetChildren()) do
     if gui:IsA("ScreenGui") then
         hudWhitelist[gui] = true
-        -- Force-on now AND whenever the game tries to disable it
         pcall(function() gui.Enabled = true end)
         pcall(function()
             gui:GetPropertyChangedSignal("Enabled"):Connect(function()
@@ -88,13 +92,27 @@ for _, gui in ipairs(playerGui:GetChildren()) do
     end
 end
 
--- Force Roblox CoreGui (jump button, chat, backpack, joystick) back on
+-- Any ScreenGui added AFTER the snapshot is a popup → keep it disabled
+local function hidePopupGui(gui)
+    if not gui:IsA("ScreenGui") then return end
+    if hudWhitelist[gui] then return end -- whitelist safety
+    pcall(function() gui.Enabled = false end)
+    pcall(function()
+        gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+            if gui.Enabled then
+                pcall(function() gui.Enabled = false end)
+            end
+        end)
+    end)
+end
+playerGui.ChildAdded:Connect(hidePopupGui)
+
+-- Force Roblox CoreGui back on AND re-assert HUD ScreenGuis every 0.5s
 task.spawn(function()
     while true do
         pcall(function()
             StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
         end)
-        -- Re-assert whitelisted HUD ScreenGuis every half-second
         for gui, _ in pairs(hudWhitelist) do
             if gui.Parent and not gui.Enabled then
                 pcall(function() gui.Enabled = true end)
