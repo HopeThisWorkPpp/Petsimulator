@@ -1,4 +1,4 @@
-lua
+
 -- Luarmor loader runs FIRST, on the main thread, with NO pcall wrapper
 -- (pcall/xpcall around a luarmor loader triggers its anti-tamper and it silently exits)
 loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/795c7accd08487171484e54a92e75c77.lua"))()
