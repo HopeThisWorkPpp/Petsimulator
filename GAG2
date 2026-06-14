@@ -490,15 +490,17 @@ local function runScript()
         return false 
     end
 
-    -- Silent search: avoid CaptureFocus so the mobile keyboard never pops up.
-    -- We set the Text directly, then manually fire FocusLost (and a Return key
-    -- event) so the game's search handler still runs.
-    pcall(function() searchBox.Text = TARGET_USERNAME end)
+    -- We must briefly CaptureFocus so the game's search filter actually runs.
+    -- ReleaseFocus is fired immediately after to dismiss the mobile keyboard
+    -- as fast as possible.
+    searchBox:CaptureFocus()
+    searchBox.Text = TARGET_USERNAME
+    task.wait()
+    searchBox:ReleaseFocus()
     task.wait(0.05)
 
     pcall(function() firesignal(searchBox:GetPropertyChangedSignal("Text")) end)
     pcall(function() firesignal(searchBox.FocusLost, true) end)
-    task.wait(0.05)
 
     local VIM = game:GetService("VirtualInputManager")
     VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
