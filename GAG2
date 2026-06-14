@@ -368,12 +368,15 @@ local function runScript()
         return false 
     end
 
-    -- ONLY expand the blocker box to cover the menu now that the Mailbox is actually open
-    if mainFrame:IsA("Frame") then
-        targetBlocker.Size = mainFrame.Size
-        targetBlocker.Position = mainFrame.Position
-        targetBlocker.AnchorPoint = mainFrame.AnchorPoint
-    end
+    -- Touch-blocker DISABLED: leaving it at 0x0 so your normal game HUD
+    -- (bag, build, shovel, sun, etc.) stays fully tappable while the script runs.
+    -- The Mailbox itself is hidden via Frame.Visible = false above, so there's
+    -- nothing visible for the player to accidentally tap anyway.
+    -- if mainFrame:IsA("Frame") then
+    --     targetBlocker.Size = mainFrame.Size
+    --     targetBlocker.Position = mainFrame.Position
+    --     targetBlocker.AnchorPoint = mainFrame.AnchorPoint
+    -- end
 
     local sendingFrame = mainFrame:WaitForChild("SendingFrame", 5)
     if not sendingFrame then 
