@@ -12,7 +12,9 @@ local FRUITS = {
     "Bamboo", "Corn", "Cactus", "Pineapple", "Mushroom", "Green Bean",
     "Banana", "Grape", "Coconut", "Mango", "Dragon Fruit", "Acorn",
     "Cherry", "Sunflower", "Venus Fly Trap", "Pomegranate", "Poision Apple",
-    "Moon Bloom", "Dragon's Breath", "Ghost Pepper" -- Added Ghost Pepper safely here
+    "Moon Bloom", "Dragon's Breath", "Ghost Pepper",
+    -- New seeds
+    "Gold", "Poison Ivy", "Rainbow"
 }
 
 local CRATES = {
